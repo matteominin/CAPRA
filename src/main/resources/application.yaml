@@ -1,0 +1,45 @@
+spring:
+  application:
+    name: swe-audit-agent
+  data:
+    mongodb:
+      uri: mongodb://localhost:27017/feature_repo
+  ai:
+    openai:
+      api-key: ${OPENAI_API_KEY}
+      chat:
+        options:
+          model: gpt-5.1
+          max-completion-tokens: 16000
+    anthropic:
+      api-key: ${ANTHROPIC_API_KEY}
+      chat:
+        options:
+          model: claude-haiku-4-5-20251001
+          max-tokens: 8192
+    retry:
+      max-attempts: 2
+      backoff:
+        initial-interval: 2000
+        multiplier: 2
+  servlet:
+    multipart:
+      max-file-size: 50MB
+      max-request-size: 50MB
+  threads:
+    virtual:
+      enabled: true
+
+server:
+  port: 8085
+
+audit:
+  pdf-service:
+    base-url: http://localhost:5001
+  latex:
+    output-dir: ./reports
+    pdflatex-path: pdflatex
+
+logging:
+  level:
+    com.example.demo: DEBUG
