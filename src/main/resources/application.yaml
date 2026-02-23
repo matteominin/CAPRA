@@ -3,7 +3,9 @@ spring:
     name: swe-audit-agent
   data:
     mongodb:
-      uri: mongodb://localhost:27017/feature_repo
+      host: localhost
+      port: 27017
+      database: features_repo
   ai:
     openai:
       api-key: ${OPENAI_API_KEY}
