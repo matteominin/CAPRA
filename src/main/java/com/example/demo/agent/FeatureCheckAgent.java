@@ -3,6 +3,7 @@ package com.example.demo.agent;
 import com.example.demo.model.Feature;
 import com.example.demo.model.FeatureCoverage;
 import com.example.demo.model.FeatureCoverageResponse;
+import com.example.demo.service.ResilientLlmCaller;
 import com.example.demo.repository.FeatureRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -85,9 +86,9 @@ public class FeatureCheckAgent {
                 .collect(Collectors.joining("\n\n"));
 
         try {
-            FeatureCoverageResponse response = chatClient.prompt()
-                    .system(SYSTEM_PROMPT)
-                    .user("""
+            FeatureCoverageResponse response = ResilientLlmCaller.callEntity(
+                    chatClient, SYSTEM_PROMPT,
+                    """
                             Analizza il seguente documento e verifica la presenza di ciascuna feature.
                             
                             DOCUMENTO:
@@ -101,9 +102,8 @@ public class FeatureCheckAgent {
                             Per ogni feature, restituisci featureName (esattamente come fornito),
                             status, coverageScore, evidence, matchedItems e totalItems.
                             Per il campo "category" usa una di: Requisiti, Architettura, Testing, Design, Documentazione.
-                            """.formatted(truncate(documentText, 80000), featuresDescription))
-                    .call()
-                    .entity(FeatureCoverageResponse.class);
+                            """.formatted(truncate(documentText, 80000), featuresDescription),
+                    FeatureCoverageResponse.class, "FeatureCheckAgent");
 
             if (response != null && response.features() != null) {
                 long present = response.features().stream()

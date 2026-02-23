@@ -1,10 +1,7 @@
 package com.example.demo.service;
 
 import com.example.demo.config.AuditProperties;
-import com.example.demo.model.AuditIssue;
-import com.example.demo.model.AuditReport;
-import com.example.demo.model.FeatureCoverage;
-import com.example.demo.model.Severity;
+import com.example.demo.model.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.client.ChatClient;
@@ -271,6 +268,7 @@ public class LatexReportService {
                 \\usepackage{fancyhdr}
                 \\usepackage{longtable}
                 \\usepackage{array}
+                \\usepackage{amssymb}
                 \\geometry{a4paper, margin=2.5cm}
                 
                 \\definecolor{highcolor}{RGB}{180,0,0}
@@ -302,18 +300,20 @@ public class LatexReportService {
 
         // ── 1. Contesto del Documento ──
         sb.append("\\section{Contesto del Documento}\n");
-        sb.append(escapeLatexBlock(documentContext));
-        sb.append("\n\n");
+        sb.append("\\begin{small}\n");
+        sb.append(formatContextSection(documentContext));
+        sb.append("\\end{small}\n\n");
 
         // ── 2. Sintesi Esecutiva ──
         sb.append("\\section{Sintesi Esecutiva}\n");
-        sb.append(escapeLatexBlock(summary));
+        sb.append(formatSynthesisSection(summary, report));
         sb.append("\n\n");
 
         // ── 3. Punti di Forza ──
         sb.append("\\section{Punti di Forza}\n");
+        sb.append("\\begin{small}\n");
         sb.append(escapeLatexBlock(strengths));
-        sb.append("\n\n");
+        sb.append("\\end{small}\n\n");
 
         // ── 4. Scorecard per Area ──
         sb.append("\\section{Scorecard per Area}\n");
@@ -341,6 +341,18 @@ public class LatexReportService {
         // ── 8. Raccomandazioni Prioritarie ──
         sb.append("\\section{Raccomandazioni Prioritarie}\n");
         sb.append(buildPriorityRecommendations(report));
+
+        // ── 9. Matrice di Tracciabilità ──
+        if (report.traceabilityMatrix() != null && !report.traceabilityMatrix().isEmpty()) {
+            sb.append("\\section{Matrice di Tracciabilit\\`a}\n");
+            sb.append(buildTraceabilityMatrix(report.traceabilityMatrix()));
+        }
+
+        // ── 10. Coerenza Terminologica ──
+        if (report.glossaryIssues() != null && !report.glossaryIssues().isEmpty()) {
+            sb.append("\\section{Coerenza Terminologica}\n");
+            sb.append(buildGlossaryIssuesSection(report.glossaryIssues()));
+        }
 
         sb.append("\\end{document}\n");
         return sb.toString();
@@ -617,7 +629,7 @@ public class LatexReportService {
     }
 
     /**
-     * Blocco LaTeX per singola issue, con cross-reference e raccomandazione.
+     * Blocco LaTeX per singola issue, con cross-reference, raccomandazione e confidence badge.
      */
     private String buildIssueBlock(AuditIssue issue, Map<String, List<String>> crossRefs) {
         String severityLabel = switch (issue.severity()) {
@@ -626,9 +638,14 @@ public class LatexReportService {
             case LOW -> "\\textcolor{lowcolor}{LOW}";
         };
 
+        // Confidence badge
+        int confPct = (int) Math.round(issue.confidenceScore() * 100);
+        String confColor = confPct >= 80 ? "present" : confPct >= 60 ? "partial" : "absent";
+        String confBadge = "\\textcolor{%s}{[%d\\%%]}".formatted(confColor, confPct);
+
         var sb = new StringBuilder();
-        sb.append("\\paragraph{%s \\textnormal{--- %s --- Pagina %d}}\n".formatted(
-                escapeLatex(issue.id()), severityLabel, issue.pageReference()));
+        sb.append("\\paragraph{%s \\textnormal{--- %s %s --- Pagina %d}}\n".formatted(
+                escapeLatex(issue.id()), severityLabel, confBadge, issue.pageReference()));
 
         sb.append("%s\n\n".formatted(escapeLatex(issue.description())));
 
@@ -692,6 +709,166 @@ public class LatexReportService {
             return text.substring(0, lastPeriod + 1);
         }
         return text.substring(0, maxLen) + "...";
+    }
+
+    // ═══════════════════════════════════════════════════
+    // New section builders (Traceability, Glossary, Layout)
+    // ═══════════════════════════════════════════════════
+
+    /**
+     * Formatta il contesto del documento con mini-subsections per leggibilità.
+     * Riconosce le intestazioni nel testo LLM e le converte in \subsection*.
+     */
+    private String formatContextSection(String rawContext) {
+        if (rawContext == null || rawContext.isBlank()) return "";
+
+        var sb = new StringBuilder();
+        String[] lines = rawContext.split("\\n");
+
+        for (String line : lines) {
+            String trimmed = line.trim();
+            if (trimmed.isEmpty()) {
+                sb.append("\n");
+                continue;
+            }
+            // Detect section headers (all caps or ending with colon)
+            if (isSectionHeader(trimmed)) {
+                String headerText = trimmed.replaceAll(":$", "").trim();
+                sb.append("\n\\subsection*{%s}\n".formatted(escapeLatex(headerText)));
+            } else {
+                sb.append(escapeLatexBlock(trimmed)).append("\n");
+            }
+        }
+        return sb.toString();
+    }
+
+    private boolean isSectionHeader(String line) {
+        // Common headers from the LLM context prompt
+        String upper = line.toUpperCase();
+        return upper.startsWith("OBIETTIVO DEL PROGETTO") ||
+               upper.startsWith("CASI D'USO") || upper.startsWith("CASI D USO") ||
+               upper.startsWith("REQUISITI FUNZIONALI") ||
+               upper.startsWith("REQUISITI NON FUNZIONALI") ||
+               upper.startsWith("ARCHITETTURA") ||
+               upper.startsWith("STRATEGIA DI TESTING") ||
+               upper.startsWith("TECNOLOGIE") ||
+               (line.endsWith(":") && line.length() < 60 && !line.contains(".") && !line.startsWith("-"));
+    }
+
+    /**
+     * Formatta la sintesi esecutiva con un box riassuntivo iniziale con le metriche,
+     * seguito dal testo LLM.
+     */
+    private String formatSynthesisSection(String summary, AuditReport report) {
+        var sb = new StringBuilder();
+
+        // Mini-dashboard box at top
+        long high = report.severityDistribution().getOrDefault(Severity.HIGH, 0L);
+        long med = report.severityDistribution().getOrDefault(Severity.MEDIUM, 0L);
+        long low = report.severityDistribution().getOrDefault(Severity.LOW, 0L);
+
+        sb.append("\\noindent\\fbox{\\parbox{\\dimexpr\\textwidth-2\\fboxsep-2\\fboxrule}{%\n");
+        sb.append("\\centering\\textbf{Panoramica Rapida} \\\\[0.3em]\n");
+        sb.append("Problemi totali: \\textbf{%d} \\quad --- \\quad ".formatted(report.totalIssues()));
+        sb.append("\\textcolor{highcolor}{HIGH: \\textbf{%d}} \\quad ".formatted(high));
+        sb.append("\\textcolor{medcolor}{MEDIUM: \\textbf{%d}} \\quad ".formatted(med));
+        sb.append("\\textcolor{lowcolor}{LOW: \\textbf{%d}}\n".formatted(low));
+
+        // Average confidence if available
+        if (!report.issues().isEmpty()) {
+            double avgConf = report.issues().stream()
+                    .mapToDouble(AuditIssue::confidenceScore).average().orElse(0.0);
+            sb.append("\\\\[0.2em] Confidence media: \\textbf{%d\\%%}\n".formatted(
+                    (int) Math.round(avgConf * 100)));
+        }
+        sb.append("}}\n\\vspace{0.5em}\n\n");
+
+        // LLM narrative text
+        sb.append("\\begin{small}\n");
+        sb.append(escapeLatexBlock(summary));
+        sb.append("\n\\end{small}\n");
+
+        return sb.toString();
+    }
+
+    /**
+     * Matrice di tracciabilità UC → Design → Test, con indicatori ✓/✗ e gap.
+     */
+    private String buildTraceabilityMatrix(List<TraceabilityEntry> entries) {
+        var sb = new StringBuilder();
+
+        long fullyCovered = entries.stream().filter(e -> e.hasDesign() && e.hasTest()).count();
+        long missingDesign = entries.stream().filter(e -> !e.hasDesign()).count();
+        long missingTest = entries.stream().filter(e -> !e.hasTest()).count();
+
+        sb.append("Su %d casi d'uso tracciati: \\textcolor{present}{%d completamente coperti}, ".formatted(
+                entries.size(), fullyCovered));
+        sb.append("\\textcolor{absent}{%d senza design, %d senza test}.\n\n".formatted(missingDesign, missingTest));
+
+        sb.append("\\begin{longtable}{l l c c p{5.5cm}}\n");
+        sb.append("\\toprule\n");
+        sb.append("\\textbf{ID} & \\textbf{Caso d'Uso} & \\textbf{Design} & \\textbf{Test} & \\textbf{Gap} \\\\\n");
+        sb.append("\\midrule\n");
+        sb.append("\\endhead\n");
+
+        for (TraceabilityEntry e : entries) {
+            String designMark = e.hasDesign()
+                    ? "\\textcolor{present}{$\\checkmark$}"
+                    : "\\textcolor{absent}{$\\times$}";
+            String testMark = e.hasTest()
+                    ? "\\textcolor{present}{$\\checkmark$}"
+                    : "\\textcolor{absent}{$\\times$}";
+            String gapText = e.gap() != null && !e.gap().isBlank()
+                    ? escapeLatex(truncateRecommendation(e.gap(), 120))
+                    : "---";
+
+            sb.append("%s & %s & %s & %s & {\\small %s} \\\\\n".formatted(
+                    escapeLatex(e.useCaseId()),
+                    escapeLatex(truncateRecommendation(e.useCaseName(), 35)),
+                    designMark,
+                    testMark,
+                    gapText));
+        }
+
+        sb.append("\\bottomrule\n");
+        sb.append("\\end{longtable}\n\n");
+
+        return sb.toString();
+    }
+
+    /**
+     * Sezione coerenza terminologica — errori di glossario / terminologia incoerente.
+     */
+    private String buildGlossaryIssuesSection(List<GlossaryIssue> issues) {
+        var sb = new StringBuilder();
+
+        long major = issues.stream().filter(g -> "MAJOR".equalsIgnoreCase(g.severity())).count();
+        long minor = issues.size() - major;
+        sb.append("Rilevate \\textbf{%d} incoerenze terminologiche (%d maggiori, %d minori).\n\n"
+                .formatted(issues.size(), major, minor));
+
+        sb.append("\\begin{longtable}{p{3cm} p{4cm} c p{5cm}}\n");
+        sb.append("\\toprule\n");
+        sb.append("\\textbf{Gruppo} & \\textbf{Varianti trovate} & \\textbf{Severit\\`a} & \\textbf{Suggerimento} \\\\\n");
+        sb.append("\\midrule\n");
+        sb.append("\\endhead\n");
+
+        for (GlossaryIssue g : issues) {
+            String sevColor = "MAJOR".equalsIgnoreCase(g.severity()) ? "highcolor" : "medcolor";
+            String variants = g.variants() != null ? escapeLatex(g.variants()) : "";
+
+            sb.append("%s & {\\small %s} & \\textcolor{%s}{%s} & {\\small %s} \\\\\n".formatted(
+                    escapeLatex(g.termGroup()),
+                    variants,
+                    sevColor,
+                    escapeLatex(g.severity()),
+                    escapeLatex(g.suggestion() != null ? g.suggestion() : "")));
+        }
+
+        sb.append("\\bottomrule\n");
+        sb.append("\\end{longtable}\n\n");
+
+        return sb.toString();
     }
 
     // ═══════════════════════════════════════════════════

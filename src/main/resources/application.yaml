@@ -13,12 +13,15 @@ spring:
         options:
           model: gpt-5.1
           max-completion-tokens: 16000
+          temperature: 0.0
+          seed: 42
     anthropic:
       api-key: ${ANTHROPIC_API_KEY}
       chat:
         options:
           model: claude-haiku-4-5-20251001
           max-tokens: 8192
+          temperature: 0.0
     retry:
       max-attempts: 2
       backoff:

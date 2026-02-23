@@ -12,6 +12,7 @@ public record VerifiedIssue(
         String quote,
         String category,
         String recommendation,
+        double confidenceScore,
         boolean verified,
         String verificationNote
 ) {
@@ -20,6 +21,6 @@ public record VerifiedIssue(
      * Converte in AuditIssue standard (scartando i campi di verifica).
      */
     public AuditIssue toAuditIssue() {
-        return new AuditIssue(id, severity, description, pageReference, quote, category, recommendation);
+        return new AuditIssue(id, severity, description, pageReference, quote, category, recommendation, confidenceScore);
     }
 }

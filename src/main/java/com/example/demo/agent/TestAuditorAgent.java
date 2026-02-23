@@ -3,6 +3,7 @@ package com.example.demo.agent;
 import com.example.demo.model.AgentResponse;
 import com.example.demo.model.AuditIssue;
 import com.example.demo.model.IssuesResponse;
+import com.example.demo.service.ResilientLlmCaller;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.client.ChatClient;
@@ -61,6 +62,14 @@ public class TestAuditorAgent {
             
             FORMATO ID: TST-001, TST-002, etc.
             
+            CONFIDENCE SCORE:
+            Il campo "confidenceScore" deve essere un numero tra 0.0 e 1.0 che indica quanto sei sicuro
+            che il problema sia reale:
+            - 0.9-1.0: certezza assoluta, evidenza inequivocabile nel testo
+            - 0.7-0.89: buona fiducia, evidenza chiara ma con qualche ambiguita
+            - 0.5-0.69: fiducia moderata, il problema potrebbe essere interpretato diversamente
+            - sotto 0.5: NON segnalare, non sei abbastanza sicuro
+            
             DEDUPLICAZIONE: NON segnalare lo stesso problema gia coperto dall'agente dei requisiti.
             Concentrati SOLO sui gap di testing e coerenza architetturale. Se un problema di requisiti
             implica anche un gap di test, segnala SOLO il gap di test.
@@ -82,9 +91,9 @@ public class TestAuditorAgent {
         log.info("TestAuditorAgent: avvio analisi ({} caratteri)", documentText.length());
 
         try {
-            IssuesResponse response = chatClient.prompt()
-                    .system(SYSTEM_PROMPT)
-                    .user("""
+            IssuesResponse response = ResilientLlmCaller.callEntity(
+                    chatClient, SYSTEM_PROMPT,
+                    """
                             Analizza il seguente documento di Ingegneria del Software.
                             Concentrati sulla copertura dei test, la coerenza tra design e implementazione,
                             e la tracciabilità tra requisiti e test case.
@@ -94,9 +103,8 @@ public class TestAuditorAgent {
                             ---
                             %s
                             ---
-                            """.formatted(documentText))
-                    .call()
-                    .entity(IssuesResponse.class);
+                            """.formatted(documentText),
+                    IssuesResponse.class, "TestAuditorAgent");
 
             List<AuditIssue> issues = (response != null && response.issues() != null)
                     ? response.issues()

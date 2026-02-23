@@ -3,6 +3,7 @@ package com.example.demo.agent;
 import com.example.demo.model.AuditIssue;
 import com.example.demo.model.VerificationResponse;
 import com.example.demo.model.VerifiedIssue;
+import com.example.demo.service.ResilientLlmCaller;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
@@ -90,9 +91,9 @@ public class ConsistencyManager {
             String issuesJson = objectMapper.writerWithDefaultPrettyPrinter()
                     .writeValueAsString(candidateIssues);
 
-            VerificationResponse response = chatClient.prompt()
-                    .system(SYSTEM_PROMPT)
-                    .user("""
+            VerificationResponse response = ResilientLlmCaller.callEntity(
+                    chatClient, SYSTEM_PROMPT,
+                    """
                             TESTO ORIGINALE DEL DOCUMENTO:
                             ===BEGIN DOCUMENT===
                             %s
@@ -103,9 +104,8 @@ public class ConsistencyManager {
                             
                             Per ogni issue, verifica la citazione nel testo originale sopra
                             e decidi se confermare o rigettare. ATTENZIONE: identifica e rimuovi i duplicati.
-                            """.formatted(documentText, issuesJson))
-                    .call()
-                    .entity(VerificationResponse.class);
+                            """.formatted(documentText, issuesJson),
+                    VerificationResponse.class, "ConsistencyManager");
 
             if (response == null || response.verifiedIssues() == null) {
                 log.warn("ConsistencyManager: risposta nulla, restituisco tutte le issue come non verificate");
@@ -159,8 +159,17 @@ public class ConsistencyManager {
     private List<AuditIssue> renumber(List<AuditIssue> issues) {
         Map<String, AtomicInteger> counters = new HashMap<>();
 
-        List<AuditIssue> renumbered = new ArrayList<>(issues.size());
-        for (AuditIssue issue : issues) {
+        // Ordinamento deterministico prima della rinumerazione
+        List<AuditIssue> sorted = issues.stream()
+                .sorted(Comparator
+                        .comparing((AuditIssue i) -> i.category() != null ? i.category() : "ZZZ")
+                        .thenComparing(i -> i.severity().ordinal())
+                        .thenComparingInt(AuditIssue::pageReference)
+                        .thenComparing(i -> i.description() != null ? i.description() : ""))
+                .toList();
+
+        List<AuditIssue> renumbered = new ArrayList<>(sorted.size());
+        for (AuditIssue issue : sorted) {
             String prefix = prefixForCategory(issue.category());
             int seq = counters.computeIfAbsent(prefix, k -> new AtomicInteger(0))
                     .incrementAndGet();
