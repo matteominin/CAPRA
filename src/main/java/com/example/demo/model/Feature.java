@@ -7,8 +7,8 @@ import java.time.Instant;
 import java.util.List;
 
 /**
- * Feature attesa in un documento SWE, caricata da MongoDB.
- * Ogni feature ha una checklist di criteri per verificarne la copertura.
+ * Expected feature in a SWE document, loaded from MongoDB.
+ * Each feature has a checklist of criteria to verify its coverage.
  */
 @Document(collection = "summary_features")
 public record Feature(

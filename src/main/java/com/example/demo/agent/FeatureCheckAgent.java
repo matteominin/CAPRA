@@ -15,9 +15,9 @@ import java.util.List;
 import java.util.stream.Collectors;
 
 /**
- * Agente che verifica la presenza delle feature attese (da MongoDB) nel documento analizzato.
- * Carica le feature dalla collection summary_features e usa l'LLM per controllare
- * quali checklist items sono soddisfatti nel testo del documento.
+ * Agent that verifies the presence of expected features (from MongoDB) in the analyzed document.
+ * Loads features from the summary_features collection and uses the LLM to check
+ * which checklist items are satisfied in the document text.
  */
 @Service
 public class FeatureCheckAgent {
@@ -25,26 +25,25 @@ public class FeatureCheckAgent {
     private static final Logger log = LoggerFactory.getLogger(FeatureCheckAgent.class);
 
     private static final String SYSTEM_PROMPT = """
-            Sei un esperto di Ingegneria del Software. Ti viene fornito il testo di un documento
-            di progetto SWE (tesi/relazione) e una lista di FEATURE ATTESE, ciascuna con una checklist.
+            You are a Software Engineering expert. You are provided with the text of a SWE project document (thesis/report) and a list of EXPECTED FEATURES, each with a checklist.
             
-            COMPITO:
-            Per ogni feature, verifica se e in che misura e presente nel documento analizzando la checklist.
+            TASK:
+            For each feature, verify if and to what extent it is present in the document by analyzing the checklist.
             
-            Per ciascuna voce della checklist:
-            - Cerca evidenza concreta nel testo del documento
-            - Segna la voce come soddisfatta SOLO se trovi evidenza chiara
+            For each checklist item:
+            - Look for concrete evidence in the document text
+            - Mark the item as satisfied ONLY if you find clear evidence
             
-            REGOLE:
-            - status = "PRESENT" se almeno 80%% delle voci checklist sono soddisfatte
-            - status = "PARTIAL" se tra 30%% e 79%% delle voci checklist sono soddisfatte
-            - status = "ABSENT" se meno del 30%% delle voci checklist sono soddisfatte
-            - coverageScore = percentuale di voci soddisfatte (0-100, intero)
-            - matchedItems = numero di voci soddisfatte
-            - totalItems = numero totale di voci nella checklist
-            - evidence = una o due frasi che spiegano cosa hai trovato (o cosa manca). NO comandi LaTeX.
-            - NON inventare evidenze. Se non trovi qualcosa, dillo chiaramente.
-            - Scrivi tutto in ITALIANO
+            RULES:
+            - status = "PRESENT" if at least 80%% of checklist items are satisfied
+            - status = "PARTIAL" if between 30%% and 79%% of checklist items are satisfied
+            - status = "ABSENT" if less than 30%% of checklist items are satisfied
+            - coverageScore = percentage of satisfied items (0-100, integer)
+            - matchedItems = number of satisfied items
+            - totalItems = total number of items in the checklist
+            - evidence = one or two sentences explaining what you found (or what is missing). NO LaTeX commands.
+            - DO NOT invent evidence. If you don't find something, state it clearly.
+            - Write everything in ITALIAN
             """;
 
     private final ChatClient chatClient;
@@ -57,22 +56,22 @@ public class FeatureCheckAgent {
     }
 
     /**
-     * Carica le feature da MongoDB e verifica la loro presenza nel documento.
+     * Loads features from MongoDB and verifies their presence in the document.
      *
-     * @param documentText testo completo del documento PDF
-     * @return lista di copertura per ogni feature, o lista vuota se non ci sono feature in DB
+     * @param documentText full text of the PDF document
+     * @return coverage list for each feature, or empty list if no features in DB
      */
     public List<FeatureCoverage> checkFeatures(String documentText) {
         List<Feature> features = featureRepository.findAll();
 
         if (features.isEmpty()) {
-            log.warn("FeatureCheckAgent: nessuna feature trovata in MongoDB, skip controllo");
+            log.warn("FeatureCheckAgent: no features found in MongoDB, skipping check");
             return List.of();
         }
 
-        log.info("FeatureCheckAgent: verifico {} feature dal database", features.size());
+        log.info("FeatureCheckAgent: verifying {} features from the database", features.size());
 
-        // Costruisci la descrizione delle feature per il prompt
+        // Build the feature description for the prompt
         String featuresDescription = features.stream()
                 .map(f -> {
                     String checklist = (f.checklist() != null && !f.checklist().isEmpty())
@@ -113,16 +112,16 @@ public class FeatureCheckAgent {
                 long absent = response.features().stream()
                         .filter(f -> f.status() == FeatureCoverage.FeatureStatus.ABSENT).count();
 
-                log.info("FeatureCheckAgent: risultato — {} presenti, {} parziali, {} assenti",
+                log.info("FeatureCheckAgent: result — {} present, {} partial, {} absent",
                         present, partial, absent);
                 return response.features();
             }
 
-            log.warn("FeatureCheckAgent: risposta nulla dall'LLM");
+            log.warn("FeatureCheckAgent: null response from LLM");
             return List.of();
 
         } catch (Exception e) {
-            log.error("FeatureCheckAgent: errore durante il controllo delle feature", e);
+            log.error("FeatureCheckAgent: error during feature check", e);
             return List.of();
         }
     }

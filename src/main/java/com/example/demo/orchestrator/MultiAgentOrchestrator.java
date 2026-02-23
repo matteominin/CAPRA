@@ -19,25 +19,25 @@ import java.util.concurrent.ExecutorService;
 import java.util.stream.Stream;
 
 /**
- * Orchestratore della pipeline multi-agente.
+ * Multi-agent pipeline orchestrator.
  * Pipeline:
- * 1. Estrazione testo (Flask)
- * 2. Analisi parallela: Requirements + TestAuditor + Features + Traceability + Glossary
+ * 1. Text extraction (Flask)
+ * 2. Parallel analysis: Requirements + TestAuditor + Features + Traceability + Glossary
  * 3. Evidence Anchoring (fuzzy match, NO LLM)
- * 4. Confidence filtering (scarta confidence < 0.5)
- * 5. Verifica incrociata LLM (ConsistencyManager)
- * 6. Generazione report LaTeX
- * 7. Compilazione PDF (pdflatex)
+ * 4. Confidence filtering (discard confidence < threshold)
+ * 5. LLM cross-verification (ConsistencyManager)
+ * 6. LaTeX report generation
+ * 7. PDF compilation (pdflatex)
  */
 @Service
 public class MultiAgentOrchestrator {
 
     private static final Logger log = LoggerFactory.getLogger(MultiAgentOrchestrator.class);
 
-    /** Soglia minima di confidence per includere un'issue nel report. */
-    private static final double CONFIDENCE_THRESHOLD = 0.5;
+    /** Minimum confidence threshold for including an issue in the report. */
+    private static final double CONFIDENCE_THRESHOLD = 0.65;
 
-    /** Ordine deterministico delle issue: categoria → severità (HIGH first) → pagina → descrizione. */
+    /** Deterministic issue ordering: category → severity (HIGH first) → page → description. */
     private static final Comparator<AuditIssue> ISSUE_ORDER = Comparator
             .comparing((AuditIssue i) -> i.category() != null ? i.category() : "ZZZ")
             .thenComparing(i -> i.severity().ordinal())
@@ -83,16 +83,16 @@ public class MultiAgentOrchestrator {
     public AuditResult analyze(MultipartFile file) {
         String filename = file.getOriginalFilename() != null ? file.getOriginalFilename() : "document.pdf";
         log.info("═══════════════════════════════════════════════");
-        log.info("Avvio pipeline di audit per '{}'", filename);
+        log.info("Starting audit pipeline for '{}'", filename);
         log.info("═══════════════════════════════════════════════");
 
-        // ── Step 1: Estrazione testo ──
-        log.info("[1/7] Estrazione testo dal PDF...");
+        // ── Step 1: Text extraction ──
+        log.info("[1/7] Extracting text from PDF...");
         String fullText = ingestionService.extractFullText(file);
-        log.info("[1/7] Estrazione completata: {} caratteri", fullText.length());
+        log.info("[1/7] Extraction completed: {} characters", fullText.length());
 
-        // ── Step 2: Analisi parallela con TUTTI gli agenti ──
-        log.info("[2/7] Avvio analisi parallela (5 agenti)...");
+        // ── Step 2: Parallel analysis with ALL agents ──
+        log.info("[2/7] Starting parallel analysis (5 agents)...");
 
         CompletableFuture<AgentResponse> reqFuture =
                 CompletableFuture.supplyAsync(() -> requirementsAgent.analyze(fullText), agentExecutor);
@@ -111,56 +111,56 @@ public class MultiAgentOrchestrator {
         List<TraceabilityEntry> traceability = traceFuture.join();
         List<GlossaryIssue> glossaryIssues = glossaryFuture.join();
 
-        log.info("[2/7] Analisi completata — REQ: {} issues, TST: {} issues, Features: {}, " +
+        log.info("[2/7] Analysis completed — REQ: {} issues, TST: {} issues, Features: {}, " +
                         "Traceability: {} entries, Glossary: {} issues",
                 reqResponse.issues().size(), testResponse.issues().size(),
                 featureCoverage.size(), traceability.size(), glossaryIssues.size());
 
         // ── Step 3: Evidence Anchoring (fuzzy match, NO LLM) ──
-        log.info("[3/7] Evidence Anchoring (verifica citazioni con fuzzy match)...");
+        log.info("[3/7] Evidence Anchoring (quote verification via fuzzy match)...");
         List<AuditIssue> allCandidates = Stream.concat(
                 reqResponse.issues().stream(),
                 testResponse.issues().stream()
         ).sorted(ISSUE_ORDER).toList();
 
         List<AuditIssue> anchoredIssues = evidenceAnchoring.anchorEvidence(fullText, allCandidates);
-        log.info("[3/7] Evidence Anchoring completato: {}/{} issues sopravvissute",
+        log.info("[3/7] Evidence Anchoring completed: {}/{} issues survived",
                 anchoredIssues.size(), allCandidates.size());
 
         // ── Step 4: Confidence filtering ──
-        log.info("[4/7] Filtraggio per confidence (soglia {})...", CONFIDENCE_THRESHOLD);
+        log.info("[4/7] Filtering by confidence (threshold {})...", CONFIDENCE_THRESHOLD);
         List<AuditIssue> confidentIssues = anchoredIssues.stream()
                 .filter(i -> i.confidenceScore() >= CONFIDENCE_THRESHOLD)
                 .toList();
         long filtered = anchoredIssues.size() - confidentIssues.size();
-        log.info("[4/7] {} issues con confidence sufficiente ({} scartate sotto soglia)",
+        log.info("[4/7] {} issues with sufficient confidence ({} discarded below threshold)",
                 confidentIssues.size(), filtered);
 
-        // ── Step 5: Verifica LLM (ConsistencyManager) ──
-        log.info("[5/7] Verifica incrociata LLM su {} issues...", confidentIssues.size());
+        // ── Step 5: LLM verification (ConsistencyManager) ──
+        log.info("[5/7] LLM cross-verification on {} issues...", confidentIssues.size());
         List<AuditIssue> verifiedIssues = consistencyManager.verify(fullText, confidentIssues)
                 .stream().sorted(ISSUE_ORDER).toList();
-        log.info("[5/7] Verifica completata: {} issues confermate", verifiedIssues.size());
+        log.info("[5/7] Verification completed: {} issues confirmed", verifiedIssues.size());
 
-        // ── Step 6: Generazione report ──
-        log.info("[6/7] Generazione report LaTeX...");
+        // ── Step 6: Report generation ──
+        log.info("[6/7] Generating LaTeX report...");
         AuditReport report = AuditReport.from(filename, verifiedIssues,
                 featureCoverage, traceability, glossaryIssues);
         Path texFile = latexReportService.generateReport(report, fullText);
-        log.info("[6/7] Report LaTeX generato: {}", texFile);
+        log.info("[6/7] LaTeX report generated: {}", texFile);
 
-        // ── Step 7: Compilazione PDF ──
+        // ── Step 7: PDF compilation ──
         Path pdfFile = null;
         try {
-            log.info("[7/7] Compilazione PDF con pdflatex...");
+            log.info("[7/7] Compiling PDF with pdflatex...");
             pdfFile = latexCompilerService.compile(texFile);
-            log.info("[7/7] PDF compilato: {}", pdfFile);
+            log.info("[7/7] PDF compiled: {}", pdfFile);
         } catch (Exception e) {
-            log.warn("[7/7] Compilazione PDF fallita (il file .tex è comunque disponibile): {}", e.getMessage());
+            log.warn("[7/7] PDF compilation failed (.tex file is still available): {}", e.getMessage());
         }
 
         log.info("═══════════════════════════════════════════════");
-        log.info("Pipeline completata: {} issues, {} features, {} traceability, {} glossary",
+        log.info("Pipeline completed: {} issues, {} features, {} traceability, {} glossary",
                 report.totalIssues(), featureCoverage.size(), traceability.size(), glossaryIssues.size());
         log.info("═══════════════════════════════════════════════");
 

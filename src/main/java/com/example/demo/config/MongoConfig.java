@@ -6,8 +6,8 @@ import org.springframework.data.mongodb.MongoDatabaseFactory;
 import org.springframework.data.mongodb.core.SimpleMongoClientDatabaseFactory;
 
 /**
- * Forza esplicitamente il database MongoDB a "features_repo".
- * Workaround per Spring Boot 4.x che ignora spring.data.mongodb.database.
+ * Explicitly forces the MongoDB database to "features_repo".
+ * Workaround for Spring Boot 4.x that ignores spring.data.mongodb.database.
  */
 @Configuration
 public class MongoConfig {

@@ -13,67 +13,68 @@ import org.springframework.stereotype.Service;
 import java.util.List;
 
 /**
- * Agente di audit della suite di test.
- * Analizza l'intero documento per identificare:
- * - Requisiti critici senza test corrispondenti (gap di copertura)
- * - Incoerenze tra principi di design dichiarati e implementazione
- * - Test inadeguati o mancanti per flussi alternativi ed errori
- * - Problemi di tracciabilità requisiti-test
+ * Test suite audit agent.
+ * Analyzes the entire document to identify:
+ * - Critical requirements without corresponding tests (coverage gaps)
+ * - Inconsistencies between declared design principles and implementation
+ * - Inadequate or missing tests for alternative flows and errors
+ * - Requirements-to-test traceability issues
  */
 @Service
 public class TestAuditorAgent {
 
     private static final Logger log = LoggerFactory.getLogger(TestAuditorAgent.class);
 
-    private static final String SYSTEM_PROMPT = """
-            Sei un auditor ISO/IEC specializzato in Software Testing e Quality Assurance.
-            Stai analizzando un documento di progetto (tesi/relazione) scritto da uno studente universitario.
-            Il tuo report deve essere UTILE ALLO STUDENTE per migliorare il proprio lavoro.
+        private static final String SYSTEM_PROMPT = """
+                        You are an ISO/IEC auditor specialized in Software Testing and Quality Assurance.
+                        You are analyzing a project document (thesis/report) written by a university student.
+                        Your report must be USEFUL TO THE STUDENT to improve their work.
             
-            COMPITO:
-            Analizza il documento fornito concentrandoti sugli aspetti di testing e coerenza architetturale:
-            1. Identifica tutti i test case e le strategie di testing descritte nel documento
-            2. Mappa ogni test ai requisiti/Use Case che dovrebbe verificare
-            3. Segnala requisiti critici che NON hanno test corrispondenti (gap di copertura)
-            4. Verifica che i principi di design dichiarati (es. Composition over Inheritance, SOLID)
-               siano coerenti con le descrizioni delle classi e del codice
-            5. Controlla se i test coprono i flussi alternativi e le condizioni di errore
+                        CONTEXT: this is a UNIVERSITY project. Focus ONLY on the most IMPACTFUL problems
+                        that would truly make a difference in the quality of the document.
+                        DO NOT report minor, pedantic, or purely formal issues.
             
-            REGOLE ANTI-ALLUCINAZIONE (CRITICHE):
-            - Il campo "quote" DEVE contenere una citazione TESTUALE dal documento, copiata parola per parola.
-              NON parafrasare, NON riassumere. Copia esattamente dal testo.
-            - Il campo "pageReference" DEVE corrispondere alla pagina reale dove appare la citazione.
-            - NON inventare test o requisiti che non esistono nel documento.
-            - Se non trovi problemi, restituisci una lista vuota di issues.
+                        TASK:
+                        Analyze the provided document focusing on testing and architectural consistency aspects:
+                        1. Identify all test cases and testing strategies described in the document
+                        2. Map each test to the requirements/Use Cases it should verify
+                        3. Report critical requirements that do NOT have corresponding tests (coverage gaps)
+                        4. Check that declared design principles (e.g., Composition over Inheritance, SOLID)
+                             are consistent with class and code descriptions
+                        5. Check if tests cover alternative flows and error conditions
             
-            CATEGORIZZAZIONE:
-            - Usa "Testing" come category per gap di copertura e problemi nei test.
-            - Usa "Architettura" come category per incoerenze tra design dichiarato e implementazione.
+                        ANTI-HALLUCINATION RULES (CRITICAL):
+                        - The "quote" field MUST contain a VERBATIM citation from the document, copied word for word.
+                            DO NOT paraphrase, DO NOT summarize. Copy exactly from the text.
+                        - The "pageReference" field MUST correspond to the actual page where the quote appears.
+                        - DO NOT invent tests or requirements that do not exist in the document.
+                        - If you find no problems, return an empty list of issues.
             
-            SEVERITA:
-            - HIGH: requisiti critici (sicurezza, transazioni, gestione errori) senza test.
-            - MEDIUM: gap di copertura su funzionalita importanti.
-            - LOW: test mancanti su funzionalita secondarie.
+                        CATEGORIZATION:
+                        - Use "Testing" as category for coverage gaps and test issues.
+                        - Use "Architecture" as category for inconsistencies between declared design and implementation.
             
-            RACCOMANDAZIONI:
-            Il campo "recommendation" DEVE contenere un consiglio CONCRETO e AZIONABILE per lo studente.
-            Esempio: "Aggiungere un test con @Test testRechargeBalance_PaymentFailed() che verifichi che
-            quando il pagamento fallisce, il saldo non viene modificato e viene lanciata l'eccezione appropriata."
+                        SEVERITY:
+                        - HIGH: critical requirements (security, transactions, error handling) without tests.
+                        - MEDIUM: coverage gaps on important functionalities.
+                        - LOW: missing tests on secondary functionalities.
             
-            FORMATO ID: TST-001, TST-002, etc.
+                        RECOMMENDATIONS:
+                        The "recommendation" field MUST contain a CONCRETE and ACTIONABLE advice for the student.
+                        Example: "Add a test with @Test testRechargeBalance_PaymentFailed() that verifies when payment fails, the balance is not changed and the appropriate exception is thrown."
             
-            CONFIDENCE SCORE:
-            Il campo "confidenceScore" deve essere un numero tra 0.0 e 1.0 che indica quanto sei sicuro
-            che il problema sia reale:
-            - 0.9-1.0: certezza assoluta, evidenza inequivocabile nel testo
-            - 0.7-0.89: buona fiducia, evidenza chiara ma con qualche ambiguita
-            - 0.5-0.69: fiducia moderata, il problema potrebbe essere interpretato diversamente
-            - sotto 0.5: NON segnalare, non sei abbastanza sicuro
+                        ID FORMAT: TST-001, TST-002, etc.
             
-            DEDUPLICAZIONE: NON segnalare lo stesso problema gia coperto dall'agente dei requisiti.
-            Concentrati SOLO sui gap di testing e coerenza architetturale. Se un problema di requisiti
-            implica anche un gap di test, segnala SOLO il gap di test.
-            """;
+                        CONFIDENCE SCORE:
+                        The "confidenceScore" field must be a number between 0.0 and 1.0 indicating how certain you are
+                        that the problem is real:
+                        - 0.9-1.0: absolute certainty, unequivocal evidence in the text
+                        - 0.7-0.89: good confidence, clear evidence but some ambiguity
+                        - below 0.7: DO NOT report, not confident enough
+            
+                        DEDUPLICATION: DO NOT report the same problem already covered by the requirements agent.
+                        Focus ONLY on testing gaps and architectural consistency. If a requirements problem also implies a test gap, report ONLY the test gap.
+                        """;
 
     private final ChatClient chatClient;
 
@@ -82,13 +83,13 @@ public class TestAuditorAgent {
     }
 
     /**
-     * Analizza il testo completo del documento e restituisce i problemi rilevati nei test.
+     * Analyzes the full document text and returns detected testing issues.
      *
-     * @param documentText testo completo del documento PDF
-     * @return risposta dell'agente con la lista di issues
+     * @param documentText full text of the PDF document
+     * @return agent response with the list of issues
      */
     public AgentResponse analyze(String documentText) {
-        log.info("TestAuditorAgent: avvio analisi ({} caratteri)", documentText.length());
+        log.info("TestAuditorAgent: starting analysis ({} characters)", documentText.length());
 
         try {
             IssuesResponse response = ResilientLlmCaller.callEntity(
@@ -110,12 +111,12 @@ public class TestAuditorAgent {
                     ? response.issues()
                     : List.of();
 
-            log.info("TestAuditorAgent: analisi completata, {} problemi trovati", issues.size());
+            log.info("TestAuditorAgent: analysis completed, {} issues found", issues.size());
             return new AgentResponse("TestAuditorAgent", issues);
 
         } catch (Exception e) {
-            log.error("TestAuditorAgent: errore durante l'analisi", e);
-            throw new RuntimeException("Errore nell'analisi dei test: " + e.getMessage(), e);
+            log.error("TestAuditorAgent: error during analysis", e);
+            throw new RuntimeException("Error in test analysis: " + e.getMessage(), e);
         }
     }
 }

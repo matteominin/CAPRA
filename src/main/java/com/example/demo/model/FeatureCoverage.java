@@ -1,15 +1,15 @@
 package com.example.demo.model;
 
 /**
- * Risultato della verifica di una singola feature nel documento.
+ * Result of verifying a single feature in the document.
  *
- * @param featureName   Nome della feature (es. "Unit testing framework implementation")
- * @param category      Categoria (es. "Architecture", "Testing")  
+ * @param featureName   Feature name (e.g. "Unit testing framework implementation")
+ * @param category      Category (e.g. "Architecture", "Testing")
  * @param status        PRESENT / PARTIAL / ABSENT
- * @param coverageScore Percentuale di copertura della checklist (0-100)
- * @param evidence      Breve evidenza trovata nel documento (o motivo dell'assenza)
- * @param matchedItems  Numero di voci della checklist soddisfatte
- * @param totalItems    Numero totale di voci nella checklist
+ * @param coverageScore Checklist coverage percentage (0-100)
+ * @param evidence      Brief evidence found in the document (or reason for absence)
+ * @param matchedItems  Number of checklist items satisfied
+ * @param totalItems    Total number of checklist items
  */
 public record FeatureCoverage(
         String featureName,

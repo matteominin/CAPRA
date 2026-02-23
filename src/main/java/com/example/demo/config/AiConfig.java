@@ -13,17 +13,17 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 /**
- * Configurazione dei ChatClient per i diversi provider LLM.
+ * ChatClient configuration for the different LLM providers.
  * <p>
- * - analysisChatClient (GPT-5.1): usato dagli agenti di analisi e verifica
- * - reportChatClient (Haiku 4.5): usato per la generazione del report LaTeX
+ * - analysisChatClient (GPT-5.1): used by analysis and verification agents
+ * - reportChatClient (Haiku 4.5): used for LaTeX report generation
  */
 @Configuration
 public class AiConfig {
 
     /**
-     * ChatClient per l'analisi del documento (GPT-5.1 via OpenAI).
-     * Usato da RequirementsAgent, TestAuditorAgent e ConsistencyManager.
+     * ChatClient for document analysis (GPT-5.1 via OpenAI).
+     * Used by RequirementsAgent, TestAuditorAgent, and ConsistencyManager.
      */
     @Bean("analysisChatClient")
     public ChatClient analysisChatClient(OpenAiChatModel openAiChatModel) {
@@ -31,7 +31,7 @@ public class AiConfig {
     }
 
     /**
-     * ChatClient per la generazione del report LaTeX (Haiku 4.5 via Anthropic).
+     * ChatClient for LaTeX report generation (Haiku 4.5 via Anthropic).
      */
     @Bean("reportChatClient")
     public ChatClient reportChatClient(AnthropicChatModel anthropicChatModel) {
@@ -39,7 +39,7 @@ public class AiConfig {
     }
 
     /**
-     * Executor con thread virtuali per l'esecuzione parallela degli agenti.
+     * Executor with virtual threads for parallel agent execution.
      */
     @Bean
     public ExecutorService agentExecutor() {
@@ -47,7 +47,7 @@ public class AiConfig {
     }
 
     /**
-     * ObjectMapper condiviso per la serializzazione JSON.
+     * Shared ObjectMapper for JSON serialization.
      */
     @Bean
     public ObjectMapper objectMapper() {

@@ -3,7 +3,7 @@ package com.example.demo.model;
 import java.util.List;
 
 /**
- * Wrapper per il parsing JSON della matrice di tracciabilità.
+ * Wrapper for JSON parsing of the traceability matrix.
  */
 public record TraceabilityMatrixResponse(
         List<TraceabilityEntry> entries

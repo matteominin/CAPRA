@@ -1,8 +1,8 @@
 package com.example.demo.model;
 
 /**
- * Issue dopo il passaggio di verifica del ConsistencyManager.
- * Include il flag di verifica e una nota esplicativa.
+ * Issue after the ConsistencyManager verification pass.
+ * Includes the verification flag and an explanatory note.
  */
 public record VerifiedIssue(
         String id,
@@ -18,7 +18,7 @@ public record VerifiedIssue(
 ) {
 
     /**
-     * Converte in AuditIssue standard (scartando i campi di verifica).
+     * Converts to a standard AuditIssue (discarding verification fields).
      */
     public AuditIssue toAuditIssue() {
         return new AuditIssue(id, severity, description, pageReference, quote, category, recommendation, confidenceScore);

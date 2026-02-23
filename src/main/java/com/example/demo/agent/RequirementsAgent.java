@@ -13,67 +13,70 @@ import org.springframework.stereotype.Service;
 import java.util.List;
 
 /**
- * Agente di analisi dei requisiti e casi d'uso.
- * Analizza l'intero documento per identificare:
- * - Requisiti incompleti o ambigui
- * - Contraddizioni nella logica di business
- * - Use Case senza copertura di test
- * - Incoerenze tra requisiti funzionali e non-funzionali
+ * Requirements and use-case analysis agent.
+ * Analyzes the entire document to identify:
+ * - Incomplete or ambiguous requirements
+ * - Contradictions in business logic
+ * - Use Cases without test coverage
+ * - Inconsistencies between functional and non-functional requirements
  */
 @Service
 public class RequirementsAgent {
 
     private static final Logger log = LoggerFactory.getLogger(RequirementsAgent.class);
 
-    private static final String SYSTEM_PROMPT = """
-            Sei un auditor ISO/IEC 25010 specializzato in Ingegneria del Software.
-            Stai analizzando un documento di progetto (tesi/relazione) scritto da uno studente universitario.
-            Il tuo report deve essere UTILE ALLO STUDENTE per migliorare il proprio lavoro.
+        private static final String SYSTEM_PROMPT = """
+                        You are an ISO/IEC 25010 auditor specialized in Software Engineering.
+                        You are analyzing a project document (thesis/report) written by a university student.
+                        Your report must be USEFUL TO THE STUDENT to improve their work.
             
-            COMPITO:
-            Analizza il documento fornito e identifica problemi nei requisiti e casi d'uso:
-            1. Verifica la completezza di ogni requisito (pre-condizioni, post-condizioni, flussi alternativi)
-            2. Identifica ambiguita, contraddizioni e requisiti mancanti
-            3. Verifica la coerenza tra requisiti funzionali e non-funzionali
-            4. Mappa i casi d'uso ai test: segnala requisiti critici senza test corrispondente
-            5. Verifica che i diagrammi (se presenti) siano coerenti con le descrizioni testuali
+                        CONTEXT: this is a UNIVERSITY project. Focus ONLY on the most IMPACTFUL problems
+                        that would truly make a difference in the quality of the document.
+                        DO NOT report minor, pedantic, or purely formal issues.
             
-            REGOLE ANTI-ALLUCINAZIONE (CRITICHE):
-            - Il campo "quote" DEVE contenere una citazione TESTUALE dal documento, copiata parola per parola.
-              NON parafrasare, NON riassumere. Copia esattamente dal testo.
-            - Il campo "pageReference" DEVE corrispondere alla pagina reale dove appare la citazione.
-              Se non sei sicuro della pagina, usa la migliore approssimazione ma NON inventare.
-            - NON inventare problemi che non esistono nel testo.
-            - Se non trovi problemi, restituisci una lista vuota di issues.
+                        TASK:
+                        Analyze the provided document and identify the MOST SERIOUS problems in requirements and use cases:
+                        1. Check the completeness of each requirement (pre-conditions, post-conditions, alternative flows)
+                        2. Identify ambiguities, contradictions, and missing requirements
+                        3. Check consistency between functional and non-functional requirements
+                        4. Map use cases to tests: report critical requirements without corresponding tests
+                        5. Check that diagrams (if present) are consistent with textual descriptions
             
-            CATEGORIZZAZIONE:
-            - Usa "Requisiti" come category per problemi sui requisiti e UC.
-            - Usa "Architettura" come category per problemi architetturali o di design.
+                        ANTI-HALLUCINATION RULES (CRITICAL):
+                        - The "quote" field MUST contain a VERBATIM citation from the document, copied word for word.
+                            DO NOT paraphrase, DO NOT summarize. Copy exactly from the text.
+                        - The "pageReference" field MUST correspond to the actual page where the quote appears.
+                            If unsure about the page, use the best approximation but DO NOT invent.
+                        - DO NOT invent problems that do not exist in the text.
+                        - If you find no problems, return an empty list of issues.
             
-            SEVERITA:
-            - HIGH: problemi di sicurezza, transazioni e gestione errori senza copertura.
-            - MEDIUM: requisiti incompleti o ambigui.
-            - LOW: problemi di forma o minori.
+                        CATEGORIZATION:
+                        - Use "Requirements" as category for issues about requirements and use cases.
+                        - Use "Architecture" as category for architectural or design issues.
             
-            RACCOMANDAZIONI:
-            Il campo "recommendation" DEVE contenere un consiglio CONCRETO e AZIONABILE per lo studente.
-            Non dire genericamente "migliorare"; spiega ESATTAMENTE cosa fare.
-            Esempio: "Aggiungere al flusso alternativo 3.1 i passi specifici di gestione: 1) il sistema mostra errore,
-            2) l'utente viene reindirizzato alla pagina precedente, 3) il sistema logga il tentativo fallito."
+                        SEVERITY:
+                        - HIGH: security, transactions, and error handling issues without coverage.
+                        - MEDIUM: incomplete or ambiguous requirements.
+                        - LOW: minor or formal issues.
             
-            FORMATO ID: REQ-001, REQ-002, etc.
+                        RECOMMENDATIONS:
+                        The "recommendation" field MUST contain a CONCRETE and ACTIONABLE advice for the student.
+                        Do not say generically "improve"; explain EXACTLY what to do.
+                        Example: "Add to alternative flow 3.1 the specific handling steps: 1) the system shows an error,
+                        2) the user is redirected to the previous page, 3) the system logs the failed attempt."
             
-            CONFIDENCE SCORE:
-            Il campo "confidenceScore" deve essere un numero tra 0.0 e 1.0 che indica quanto sei sicuro
-            che il problema sia reale:
-            - 0.9-1.0: certezza assoluta, evidenza inequivocabile nel testo
-            - 0.7-0.89: buona fiducia, evidenza chiara ma con qualche ambiguita
-            - 0.5-0.69: fiducia moderata, il problema potrebbe essere interpretato diversamente
-            - sotto 0.5: NON segnalare, non sei abbastanza sicuro
+                        ID FORMAT: REQ-001, REQ-002, etc.
             
-            DEDUPLICAZIONE: NON segnalare lo stesso problema da prospettive diverse. Se un problema
-            riguarda sia requisiti che test, segnalalo UNA SOLA VOLTA nella categoria piu rilevante.
-            """;
+                        CONFIDENCE SCORE:
+                        The "confidenceScore" field must be a number between 0.0 and 1.0 indicating how certain you are
+                        that the problem is real:
+                        - 0.9-1.0: absolute certainty, unequivocal evidence in the text
+                        - 0.7-0.89: good confidence, clear evidence but some ambiguity
+                        - below 0.7: DO NOT report, not confident enough
+            
+                        DEDUPLICATION: DO NOT report the same problem from different perspectives. If a problem
+                        concerns both requirements and tests, report it ONLY ONCE in the most relevant category.
+                        """;
 
     private final ChatClient chatClient;
 
@@ -82,39 +85,39 @@ public class RequirementsAgent {
     }
 
     /**
-     * Analizza il testo completo del documento e restituisce i problemi rilevati sui requisiti.
+     * Analyzes the full document text and returns detected requirements issues.
      *
-     * @param documentText testo completo del documento PDF
-     * @return risposta dell'agente con la lista di issues
+     * @param documentText full text of the PDF document
+     * @return agent response with the list of issues
      */
     public AgentResponse analyze(String documentText) {
-        log.info("RequirementsAgent: avvio analisi ({} caratteri)", documentText.length());
+        log.info("RequirementsAgent: starting analysis ({} characters)", documentText.length());
 
         try {
-            IssuesResponse response = ResilientLlmCaller.callEntity(
+                IssuesResponse response = ResilientLlmCaller.callEntity(
                     chatClient, SYSTEM_PROMPT,
                     """
-                            Analizza il seguente documento di Ingegneria del Software.
-                            Identifica tutti i problemi relativi a requisiti, casi d'uso e logica di business.
-                            Per ogni problema, fornisci una citazione testuale esatta dal documento.
+                        Analyze the following Software Engineering document.
+                        Identify all problems related to requirements, use cases, and business logic.
+                        For each problem, provide an exact verbatim quote from the document.
                             
-                            DOCUMENTO:
-                            ---
-                            %s
-                            ---
-                            """.formatted(documentText),
+                        DOCUMENT:
+                        ---
+                        %s
+                        ---
+                        """.formatted(documentText),
                     IssuesResponse.class, "RequirementsAgent");
 
             List<AuditIssue> issues = (response != null && response.issues() != null)
                     ? response.issues()
                     : List.of();
 
-            log.info("RequirementsAgent: analisi completata, {} problemi trovati", issues.size());
+            log.info("RequirementsAgent: analysis completed, {} issues found", issues.size());
             return new AgentResponse("RequirementsAgent", issues);
 
         } catch (Exception e) {
-            log.error("RequirementsAgent: errore durante l'analisi", e);
-            throw new RuntimeException("Errore nell'analisi dei requisiti: " + e.getMessage(), e);
+            log.error("RequirementsAgent: error during analysis", e);
+            throw new RuntimeException("Error in requirements analysis: " + e.getMessage(), e);
         }
     }
 }

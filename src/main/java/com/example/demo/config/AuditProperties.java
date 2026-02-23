@@ -3,7 +3,7 @@ package com.example.demo.config;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 /**
- * Proprietà di configurazione per il sistema di audit.
+ * Configuration properties for the audit system.
  */
 @ConfigurationProperties(prefix = "audit")
 public record AuditProperties(
@@ -12,17 +12,17 @@ public record AuditProperties(
 ) {
 
     /**
-     * Configurazione del servizio Flask di estrazione PDF.
+     * Configuration for the Flask PDF extraction service.
      *
-     * @param baseUrl URL base del servizio (es. http://localhost:5001)
+     * @param baseUrl base URL of the service (e.g. http://localhost:5001)
      */
     public record PdfService(String baseUrl) {}
 
     /**
-     * Configurazione della generazione LaTeX.
+     * Configuration for LaTeX generation.
      *
-     * @param outputDir    Directory di output per i file generati
-     * @param pdflatexPath Percorso dell'eseguibile pdflatex
+     * @param outputDir    Output directory for generated files
+     * @param pdflatexPath Path to the pdflatex executable
      */
     public record Latex(String outputDir, String pdflatexPath) {}
 }

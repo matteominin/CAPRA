@@ -16,18 +16,17 @@ import java.util.*;
 import java.util.stream.Collectors;
 
 /**
- * Genera il report di audit in formato LaTeX.
- * Usa Haiku 4.5 (Anthropic) per le sezioni narrative con fallback a GPT-5.1 (OpenAI).
+ * Generates the audit report in LaTeX format.
+ * Uses Haiku 4.5 (Anthropic) for narrative sections with fallback to GPT-5.1 (OpenAI).
  * <p>
- * Struttura del report:
- * 1. Contesto del Documento
- * 2. Sintesi Esecutiva
- * 3. Punti di Forza
- * 4. Scorecard per Area
- * 5. Copertura Feature (da MongoDB)
- * 6. Tabella Riassuntiva
- * 7. Dettaglio per Categoria (raggruppato per UC)
- * 8. Raccomandazioni Prioritarie
+ * Report structure:
+ * 1. Document Context
+ * 2. Executive Summary
+ * 3. Strengths
+ * 4. Feature Coverage (from MongoDB)
+ * 5. Summary Table
+ * 6. Category Detail (grouped by UC)
+ * 7. Priority Recommendations
  */
 @Service
 public class LatexReportService {
@@ -47,7 +46,7 @@ public class LatexReportService {
     }
 
     public Path generateReport(AuditReport report, String fullText) {
-        log.info("Generazione report LaTeX per '{}' ({} issues, {} feature)",
+        log.info("Generating LaTeX report for '{}' ({} issues, {} features)",
                 report.documentName(), report.totalIssues(), report.featureCoverage().size());
 
         String documentContext = generateDocumentContext(fullText);
@@ -62,10 +61,10 @@ public class LatexReportService {
             Files.createDirectories(projectReports);
             Path texFile = projectReports.resolve("audit-report.tex");
             Files.writeString(texFile, latexContent, StandardCharsets.UTF_8);
-            log.info("File LaTeX generato: {}", texFile);
+            log.info("LaTeX file generated: {}", texFile);
             return texFile;
         } catch (IOException e) {
-            throw new RuntimeException("Errore nella scrittura del file LaTeX: " + e.getMessage(), e);
+            throw new RuntimeException("Error writing the LaTeX file: " + e.getMessage(), e);
         }
     }
 
@@ -75,32 +74,36 @@ public class LatexReportService {
 
     private String generateDocumentContext(String fullText) {
         String contextPrompt = """
-                Analizza il seguente testo di un documento di progetto software (tesi/relazione)
-                e genera una panoramica strutturata IN TESTO SEMPLICE (NO comandi LaTeX).
-                
-                Devi estrarre e riassumere TUTTE le seguenti sezioni. NON troncare l'output.
-                
-                OBIETTIVO DEL PROGETTO: cosa fa l'applicazione in 2-3 frasi.
-                
-                CASI D'USO PRINCIPALI: elenca TUTTI i Use Case con formato "UC-N - Nome: descrizione breve".
-                
-                REQUISITI FUNZIONALI: elenca i requisiti funzionali chiave in modo sintetico.
-                
-                REQUISITI NON FUNZIONALI: elenca i requisiti non funzionali (performance, sicurezza, ecc.).
-                
-                ARCHITETTURA: descrivi brevemente l'architettura (pattern, tecnologie, struttura).
-                
-                STRATEGIA DI TESTING: descrivi brevemente come vengono testati i requisiti.
-                
-                REGOLE CRITICHE:
-                - Scrivi in italiano
-                - Sii CONCISO: massimo 2 righe per ogni punto, massimo 1 riga per ogni requisito/UC
-                - NON usare linee decorative, intestazioni elaborate o separatori
-                - NON usare caratteri speciali LaTeX (& % $ # _ { } ~ ^ \\)
-                - Usa trattini (-) per gli elenchi
-                - Se una sezione non e' presente nel documento, scrivi "Non descritto nel documento"
-                - COMPLETA TUTTE LE SEZIONI: non fermarti a meta
-                """;
+            Analyze the following text from a software project document (thesis/report)
+            and generate a structured overview directly in valid LaTeX code.
+            
+            You must extract and summarize ALL the following sections. DO NOT truncate the output.
+            Generate ONLY the LaTeX body (NO \documentclass, NO \begin{document}).
+            
+            OUTPUT FORMAT (pure LaTeX):
+            Use \subsection*{Project Objective} for each heading.
+            Use \begin{itemize} ... \item ... \end{itemize} for lists.
+            Use \texttt{} for technical names and \textbf{} for emphasis.
+            
+            SECTIONS TO GENERATE:
+            - Project Objective: what the application does in 2-3 sentences.
+            - Main Use Cases: list ALL Use Cases in the format "UC-N -- Name: short description".
+            - Functional Requirements: list the key functional requirements.
+            - Non-Functional Requirements: list the non-functional requirements (performance, security, etc.).
+            - Architecture: briefly describe the architecture (patterns, technologies, structure).
+            - Testing Strategy: briefly describe how the requirements are tested.
+            
+            CRITICAL RULES:
+            - Write in English
+            - Be CONCISE: max 2 lines per point, max 1 line per requirement/UC
+            - Generate ONLY valid and compilable LaTeX code
+            - Properly escape special characters: & as \&, % as \%, _ as \_
+            - DO NOT generate \documentclass, \begin{document}, \end{document}
+            - DO NOT use non-standard packages (only itemize, enumerate, subsection, textbf, texttt)
+            - DO NOT use Unicode characters or special symbols: use only ASCII characters and standard LaTeX commands (e.g., $\in$ instead of ∈)
+            - If a section is not present in the document, write "Not described in the document."
+            - COMPLETE ALL SECTIONS: do not stop halfway
+            """;
 
         try {
             String context = callLlmWithFallback(contextPrompt,
@@ -115,62 +118,66 @@ public class LatexReportService {
 
     private String generateExecutiveSummary(AuditReport report) {
         if (report.issues().isEmpty()) {
-            return "L'analisi del documento non ha rilevato problemi significativi. "
-                    + "Il documento appare ben strutturato e coerente.";
+            return "The document analysis did not reveal any significant issues. "
+                + "The document appears well-structured and coherent.";
         }
 
         Map<String, List<AuditIssue>> byCategory = report.issues().stream()
-                .collect(Collectors.groupingBy(i -> i.category() != null ? i.category() : "Altro",
-                        LinkedHashMap::new, Collectors.toList()));
+            .collect(Collectors.groupingBy(i -> i.category() != null ? i.category() : "Other",
+                LinkedHashMap::new, Collectors.toList()));
 
         StringBuilder issuesSummary = new StringBuilder();
         for (var entry : byCategory.entrySet()) {
-            issuesSummary.append("\nCategoria %s (%d problemi):\n".formatted(entry.getKey(), entry.getValue().size()));
+            issuesSummary.append("\nCategory %s (%d issues):\n".formatted(entry.getKey(), entry.getValue().size()));
             for (AuditIssue i : entry.getValue()) {
-                issuesSummary.append("- [%s] %s: %s (pag. %d)\n".formatted(
+                issuesSummary.append("- [%s] %s: %s (p. %d)\n".formatted(
                         i.severity(), i.id(), i.description(), i.pageReference()));
             }
         }
 
         String systemPrompt = """
-                Sei un esperto di Ingegneria del Software. Genera una sintesi esecutiva in italiano
-                per un report di audit di un documento SWE scritto da uno studente universitario.
-                La sintesi deve essere in TESTO SEMPLICE (NON usare comandi LaTeX).
-                Deve essere concisa (3-5 paragrafi brevi) e deve:
-                1. Inquadrare brevemente il documento e il suo scopo (2-3 frasi)
-                2. Evidenziare i pattern di problemi riscontrati (non elencare ogni singolo problema)
-                3. Indicare le aree critiche (severity HIGH)
-                4. Dare una valutazione complessiva della qualita
-                5. Suggerire le 3 azioni prioritarie
+            You are a Software Engineering expert. Generate an executive summary in English
+            for an audit report of a SWE document written by a university student.
+            Generate the output directly in valid LaTeX code.
                 
-                REGOLE CRITICHE:
-                - NON usare caratteri speciali: & % $ # _ { } ~ ^ \\
-                - NON usare intestazioni decorate, separatori, linee di simboli
-                - COMPLETA l'intera sintesi: non fermarti a meta
-                - Massimo 500 parole totali
-                """;
+            It must be concise (3-5 short paragraphs) and must:
+            1. Briefly frame the document and its purpose (2-3 sentences)
+            2. Highlight the patterns of issues found (do not list every single issue)
+            3. Indicate the critical areas (severity HIGH)
+            4. Give an overall quality assessment
+            5. Suggest the 3 priority actions
+                
+            OUTPUT FORMAT (pure LaTeX):
+            - Use normal paragraphs separated by blank lines
+            - Use \textbf{} for emphasis and \begin{enumerate} for priority actions
+            - Properly escape: & as \&, % as \%, _ as \_
+            - DO NOT generate \documentclass, \begin{document}, \section
+            - DO NOT use non-standard packages
+            - DO NOT use Unicode characters or special symbols: use only ASCII characters and standard LaTeX commands (e.g., $\in$ instead of ∈)
+            - COMPLETE the entire summary: do not stop halfway
+            - Maximum 500 words total
+            """;
 
         String userPrompt = """
-                Genera la sintesi esecutiva per l'audit del documento '%s'.
-                Totale problemi trovati: %d (HIGH: %d, MEDIUM: %d, LOW: %d)
+            Generate the executive summary for the audit of document '%s'.
+            Total issues found: %d (HIGH: %d, MEDIUM: %d, LOW: %d)
                 
-                %s""".formatted(
-                report.documentName(),
-                report.totalIssues(),
-                report.severityDistribution().getOrDefault(Severity.HIGH, 0L),
-                report.severityDistribution().getOrDefault(Severity.MEDIUM, 0L),
-                report.severityDistribution().getOrDefault(Severity.LOW, 0L),
-                issuesSummary);
+            %s""".formatted(
+            report.documentName(),
+            report.totalIssues(),
+            report.severityDistribution().getOrDefault(Severity.HIGH, 0L),
+            report.severityDistribution().getOrDefault(Severity.MEDIUM, 0L),
+            report.severityDistribution().getOrDefault(Severity.LOW, 0L),
+            issuesSummary);
 
         try {
             String summary = callLlmWithFallback(systemPrompt, userPrompt);
-            log.debug("Sintesi esecutiva generata ({} caratteri)", summary.length());
+            log.debug("Executive summary generated ({} characters)", summary.length());
             return summary;
         } catch (Exception e) {
-            log.warn("Impossibile generare sintesi esecutiva: {}", e.getMessage());
-            return ("L'analisi del documento '%s' ha rilevato %d problemi, " +
-                    "di cui %d ad alta severita. Si raccomanda una revisione approfondita " +
-                    "delle aree critiche identificate nel report.").formatted(
+            log.warn("Unable to generate executive summary: {}", e.getMessage());
+            return ("The analysis of document '%s' found %d issues, " +
+                    "of which %d are high severity. A thorough review of the critical areas identified in the report is recommended.").formatted(
                     report.documentName(),
                     report.totalIssues(),
                     report.severityDistribution().getOrDefault(Severity.HIGH, 0L));
@@ -178,14 +185,14 @@ public class LatexReportService {
     }
 
     /**
-     * Genera la sezione "Punti di Forza" — aspetti positivi del documento.
+     * Generates the "Strengths" section — positive aspects of the document.
      */
     private String generateStrengths(AuditReport report, String fullText) {
         String systemPrompt = """
                 Sei un esperto di Ingegneria del Software. Analizza un documento di progetto SWE
                 e identifica i PUNTI DI FORZA del lavoro dello studente.
                 
-                Scrivi in TESTO SEMPLICE (NO comandi LaTeX). Scrivi in ITALIANO.
+                Genera l'output direttamente in codice LaTeX valido. Scrivi in ITALIANO.
                 
                 Identifica 3-6 aspetti positivi del documento, ad esempio:
                 - Struttura chiara e ben organizzata
@@ -195,11 +202,15 @@ public class LatexReportService {
                 - Architettura ben definita
                 - Uso corretto di pattern di design
                 
+                FORMATO OUTPUT (LaTeX puro):
+                Genera una \\begin{itemize} con un \\item per ogni punto di forza.
+                Usa \\textbf{} per il titolo del punto e testo normale per la spiegazione.
+                Escappa correttamente: & come \\&, % come \\%, _ come \\_
+                NON generare \\documentclass, \\begin{document}, \\section.
+                
                 REGOLE:
                 - Ogni punto di forza deve essere specifico e basato su EVIDENZE nel testo
                 - NON inventare punti di forza se non ci sono
-                - Formato: un elenco con trattini (-), una riga per punto
-                - NON usare caratteri speciali LaTeX: & % $ # _ { } ~ ^ \\
                 - Massimo 200 parole totali
                 """;
 
@@ -301,8 +312,8 @@ public class LatexReportService {
         // ── 1. Contesto del Documento ──
         sb.append("\\section{Contesto del Documento}\n");
         sb.append("\\begin{small}\n");
-        sb.append(formatContextSection(documentContext));
-        sb.append("\\end{small}\n\n");
+        sb.append(sanitizeLlmLatex(documentContext));
+        sb.append("\n\\end{small}\n\n");
 
         // ── 2. Sintesi Esecutiva ──
         sb.append("\\section{Sintesi Esecutiva}\n");
@@ -312,12 +323,8 @@ public class LatexReportService {
         // ── 3. Punti di Forza ──
         sb.append("\\section{Punti di Forza}\n");
         sb.append("\\begin{small}\n");
-        sb.append(escapeLatexBlock(strengths));
-        sb.append("\\end{small}\n\n");
-
-        // ── 4. Scorecard per Area ──
-        sb.append("\\section{Scorecard per Area}\n");
-        sb.append(buildScorecard(report));
+        sb.append(sanitizeLlmLatex(strengths));
+        sb.append("\n\\end{small}\n\n");
 
         // ── 5. Copertura Feature (da MongoDB) ──
         if (!report.featureCoverage().isEmpty()) {
@@ -359,10 +366,12 @@ public class LatexReportService {
     }
 
     /**
-     * Scorecard — calcola un voto (A-F) per ogni categoria basandosi su numero e severita delle issue.
+     * Scorecard -- computes a grade (A-F) for each category based on issue count and severity.
      * Formula: score = max(0, 100 - HIGH*25 - MEDIUM*10 - LOW*3)
      * A: 90-100, B: 75-89, C: 60-74, D: 40-59, F: 0-39
+     * NOTE: currently unused, retained for future use.
      */
+    @SuppressWarnings("unused")
     private String buildScorecard(AuditReport report) {
         if (report.issues().isEmpty()) {
             return "Nessun problema rilevato: valutazione complessiva eccellente.\n\n";
@@ -429,12 +438,12 @@ public class LatexReportService {
     }
 
     /**
-     * Sezione feature coverage — tabella con stato di ogni feature e barra di copertura.
+     * Feature coverage section — table with each feature's status and coverage bar.
      */
     private String buildFeatureCoverageSection(List<FeatureCoverage> features) {
         var sb = new StringBuilder();
 
-        // Conteggio riepilogo
+        // Summary count
         long present = features.stream().filter(f -> f.status() == FeatureCoverage.FeatureStatus.PRESENT).count();
         long partial = features.stream().filter(f -> f.status() == FeatureCoverage.FeatureStatus.PARTIAL).count();
         long absent = features.stream().filter(f -> f.status() == FeatureCoverage.FeatureStatus.ABSENT).count();
@@ -444,7 +453,7 @@ public class LatexReportService {
                 .formatted(features.size(), present, partial, absent));
         sb.append("Copertura media: \\textbf{%d\\%%}.\n\n".formatted(avgCoverage));
 
-        // Tabella dettagliata
+        // Detailed table
         sb.append("\\begin{longtable}{p{5cm} c c p{6cm}}\n");
         sb.append("\\toprule\n");
         sb.append("\\textbf{Feature} & \\textbf{Stato} & \\textbf{Copertura} & \\textbf{Evidenza} \\\\\n");
@@ -474,7 +483,7 @@ public class LatexReportService {
     }
 
     /**
-     * Tabella riassuntiva Categoria x Severita.
+     * Summary table Category x Severity.
      */
     private String buildSummaryTable(AuditReport report) {
         if (report.issues().isEmpty()) {
@@ -519,8 +528,8 @@ public class LatexReportService {
     }
 
     /**
-     * Dettaglio per categoria, con raggruppamento per Use Case dove rilevabile.
-     * Issues che menzionano "UC-N" vengono raggruppate sotto quel caso d'uso.
+     * Category detail with Use Case grouping where detectable.
+     * Issues mentioning "UC-N" are grouped under that use case.
      */
     private void buildDetailByCategoryAndUC(StringBuilder sb, AuditReport report) {
         Map<String, List<AuditIssue>> byCategory = report.issues().stream()
@@ -573,7 +582,7 @@ public class LatexReportService {
     }
 
     /**
-     * Estrae il riferimento UC da una issue (cercando "UC-N" o "UC N" nella descrizione/quote).
+     * Extracts the UC reference from an issue (searching for "UC-N" or "UC N" in description/quote).
      */
     private String extractUC(AuditIssue issue) {
         String combined = (issue.description() != null ? issue.description() : "") + " "
@@ -590,7 +599,7 @@ public class LatexReportService {
     }
 
     /**
-     * Costruisce una mappa di cross-reference: per ogni issue, le issue correlate (stesso UC).
+     * Builds a cross-reference map: for each issue, the related issues (same UC).
      */
     private Map<String, List<String>> buildCrossReferences(List<AuditIssue> issues) {
         // Map UC → issue IDs
@@ -629,7 +638,7 @@ public class LatexReportService {
     }
 
     /**
-     * Blocco LaTeX per singola issue, con cross-reference, raccomandazione e confidence badge.
+     * LaTeX block for a single issue, with cross-reference, recommendation, and confidence badge.
      */
     private String buildIssueBlock(AuditIssue issue, Map<String, List<String>> crossRefs) {
         String severityLabel = switch (issue.severity()) {
@@ -669,7 +678,7 @@ public class LatexReportService {
     }
 
     /**
-     * Raccomandazioni prioritarie — solo HIGH, una riga ciascuna con ID e azione.
+     * Priority recommendations — HIGH only, one line each with ID and action.
      */
     private String buildPriorityRecommendations(AuditReport report) {
         List<AuditIssue> highIssues = report.issues().stream()
@@ -699,7 +708,7 @@ public class LatexReportService {
     }
 
     /**
-     * Tronca una raccomandazione a maxLen caratteri, tagliando alla fine della frase piu vicina.
+     * Truncates a recommendation to maxLen characters, cutting at the nearest sentence end.
      */
     private String truncateRecommendation(String text, int maxLen) {
         if (text == null || text.length() <= maxLen) return text != null ? text : "";
@@ -716,9 +725,35 @@ public class LatexReportService {
     // ═══════════════════════════════════════════════════
 
     /**
-     * Formatta il contesto del documento con mini-subsections per leggibilità.
-     * Riconosce le intestazioni nel testo LLM e le converte in \subsection*.
+     * Sanitizes LLM-generated LaTeX output: removes dangerous commands
+     * like \documentclass, \begin{document}, \end{document}, \input, \include.
+     * Keeps all other LaTeX intact.
      */
+    private String sanitizeLlmLatex(String llmOutput) {
+        if (llmOutput == null || llmOutput.isBlank()) return "";
+        String cleaned = llmOutput;
+        // Remove document-level commands that would break our template
+        cleaned = cleaned.replaceAll("(?m)^\\s*\\\\documentclass.*$", "");
+        cleaned = cleaned.replaceAll("(?m)^\\s*\\\\usepackage.*$", "");
+        cleaned = cleaned.replaceAll("(?m)^\\s*\\\\begin\\{document\\}.*$", "");
+        cleaned = cleaned.replaceAll("(?m)^\\s*\\\\end\\{document\\}.*$", "");
+        cleaned = cleaned.replaceAll("(?m)^\\s*\\\\maketitle.*$", "");
+        cleaned = cleaned.replaceAll("(?m)^\\s*\\\\tableofcontents.*$", "");
+        // Remove dangerous file inclusion commands
+        cleaned = cleaned.replaceAll("\\\\input\\{[^}]*\\}", "");
+        cleaned = cleaned.replaceAll("\\\\include\\{[^}]*\\}", "");
+        // Remove markdown code fences that LLM might wrap output in
+        cleaned = cleaned.replaceAll("(?m)^```(?:latex|tex)?\\s*$", "");
+        cleaned = cleaned.replaceAll("(?m)^```\\s*$", "");
+        return cleaned.strip();
+    }
+
+    /**
+     * Formats the document context with mini-subsections for readability.
+     * Recognizes headings in LLM text and converts them to \subsection*.
+     * NOTE: currently unused (LLM now generates LaTeX directly), retained for future use.
+     */
+    @SuppressWarnings("unused")
     private String formatContextSection(String rawContext) {
         if (rawContext == null || rawContext.isBlank()) return "";
 
@@ -756,8 +791,8 @@ public class LatexReportService {
     }
 
     /**
-     * Formatta la sintesi esecutiva con un box riassuntivo iniziale con le metriche,
-     * seguito dal testo LLM.
+     * Formats the executive summary with an initial summary box with metrics,
+     * followed by the LLM text.
      */
     private String formatSynthesisSection(String summary, AuditReport report) {
         var sb = new StringBuilder();
@@ -783,16 +818,16 @@ public class LatexReportService {
         }
         sb.append("}}\n\\vspace{0.5em}\n\n");
 
-        // LLM narrative text
+        // LLM narrative text (LaTeX diretto)
         sb.append("\\begin{small}\n");
-        sb.append(escapeLatexBlock(summary));
+        sb.append(sanitizeLlmLatex(summary));
         sb.append("\n\\end{small}\n");
 
         return sb.toString();
     }
 
     /**
-     * Matrice di tracciabilità UC → Design → Test, con indicatori ✓/✗ e gap.
+     * Traceability matrix UC → Design → Test, with ✓/✗ indicators and gaps.
      */
     private String buildTraceabilityMatrix(List<TraceabilityEntry> entries) {
         var sb = new StringBuilder();
@@ -837,7 +872,7 @@ public class LatexReportService {
     }
 
     /**
-     * Sezione coerenza terminologica — errori di glossario / terminologia incoerente.
+     * Terminological consistency section — glossary errors / inconsistent terminology.
      */
     private String buildGlossaryIssuesSection(List<GlossaryIssue> issues) {
         var sb = new StringBuilder();
@@ -877,13 +912,13 @@ public class LatexReportService {
 
     private String truncateForPrompt(String text, int maxChars) {
         if (text.length() <= maxChars) return text;
-        log.warn("Testo troncato da {} a {} caratteri per il prompt", text.length(), maxChars);
+        log.warn("Text truncated from {} to {} characters for the prompt", text.length(), maxChars);
         return text.substring(0, maxChars) + "\n\n[... testo troncato per limiti di contesto ...]";
     }
 
     /**
-     * Escapa i caratteri speciali LaTeX per testo DENTRO comandi (\textit, \textbf, etc.).
-     * Collassa newline in spazi per evitare "Paragraph ended before \text@command".
+     * Escapes LaTeX special characters for text INSIDE commands (\textit, \textbf, etc.).
+     * Collapses newlines into spaces to avoid "Paragraph ended before \text@command".
      */
     private String escapeLatex(String text) {
         if (text == null) return "";
@@ -894,8 +929,8 @@ public class LatexReportService {
     }
 
     /**
-     * Escapa i caratteri speciali LaTeX PRESERVANDO i paragrafi.
-     * Per testo standalone (non dentro comandi).
+     * Escapes LaTeX special characters PRESERVING paragraphs.
+     * For standalone text (not inside commands).
      */
     private String escapeLatexBlock(String text) {
         if (text == null) return "";

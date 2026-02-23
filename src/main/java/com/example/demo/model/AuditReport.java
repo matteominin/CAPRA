@@ -6,7 +6,7 @@ import java.util.Map;
 import java.util.stream.Collectors;
 
 /**
- * Report aggregato dell'audit: issues, feature, tracciabilità e glossario.
+ * Aggregated audit report: issues, features, traceability, and glossary.
  */
 public record AuditReport(
         String documentName,

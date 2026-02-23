@@ -17,51 +17,50 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 
 /**
- * Meta-agente di verifica (Verification Loop).
- * Riceve gli output di RequirementsAgent e TestAuditorAgent e verifica ogni issue
- * cercando evidenza nel testo originale del documento.
+ * Meta-agent for verification (Verification Loop).
+ * Receives outputs from RequirementsAgent and TestAuditorAgent and verifies each issue
+ * by searching for evidence in the original document text.
  * <p>
- * Implementa:
- * - Logica anti-allucinazione (verifica citazioni)
- * - Deduplicazione cross-agente
- * - Rinumerazione sequenziale degli ID
+ * Implements:
+ * - Anti-hallucination logic (quote verification)
+ * - Cross-agent deduplication
+ * - Sequential ID renumbering
  */
 @Service
 public class ConsistencyManager {
 
     private static final Logger log = LoggerFactory.getLogger(ConsistencyManager.class);
 
-    private static final String SYSTEM_PROMPT = """
-            Sei un meta-auditor incaricato di VERIFICARE segnalazioni prodotte da altri auditor.
-            Il tuo scopo e' ELIMINARE i falsi positivi e confermare solo i problemi reali.
+                private static final String SYSTEM_PROMPT = """
+                                                You are a meta-auditor tasked with VERIFYING reports produced by other auditors.
+                                                Your goal is to ELIMINATE false positives and confirm only real issues.
             
-            Ti vengono forniti:
-            1. Il TESTO COMPLETO del documento originale
-            2. Una lista di problemi segnalati (issues) da verificare
+                                                You are provided with:
+                                                1. The FULL TEXT of the original document
+                                                2. A list of reported issues to verify
             
-            Per OGNI issue devi:
-            1. CERCARE la citazione (campo "quote") nel testo originale del documento
-            2. Verificare che la citazione esista REALMENTE (anche con piccole variazioni di formattazione)
-            3. Verificare che il numero di pagina sia plausibile
-            4. Valutare se la segnalazione descrive un problema REALE o e' un falso positivo
-            5. CONTROLLARE se ci sono issue DUPLICATE: due segnalazioni che descrivono lo
-               STESSO problema dalla stessa prospettiva o da prospettive diverse. In tal caso,
-               imposta verified=true SOLO per la versione piu completa e dettagliata.
+                                                For EACH issue you must:
+                                                1. SEARCH for the quote ("quote" field) in the original document text
+                                                2. Verify that the quote REALLY exists (even with minor formatting variations)
+                                                3. Check that the page number is plausible
+                                                4. Assess whether the report describes a REAL issue or is a false positive
+                                                5. CHECK for DUPLICATE issues: two reports describing the SAME issue from the same or different perspectives. In such cases,
+                                                         set verified=true ONLY for the most complete and detailed version.
             
-            DECISIONI:
-            - verified=true: la citazione (o una molto simile) esiste nel documento E il problema e' reale E NON e' un duplicato
-            - verified=false: la citazione NON esiste, O il problema e' un falso positivo, O e' un duplicato di un'altra issue gia confermata
+                                                DECISIONS:
+                                                - verified=true: the quote (or a very similar one) exists in the document AND the issue is real AND it is NOT a duplicate
+                                                - verified=false: the quote does NOT exist, OR the issue is a false positive, OR it is a duplicate of another already confirmed issue
             
-            REGOLE:
-            - Se la citazione NON appare nel documento in nessuna forma, imposta verified=false
-            - Se la citazione e' chiaramente inventata o una parafrasi troppo libera, imposta verified=false
-            - Se il problema e' un falso positivo (l'auditor ha frainteso il testo), imposta verified=false
-            - Se il pageReference e' sbagliato ma il problema e' reale, CORREGGI il pageReference e imposta verified=true
-            - Se due issue descrivono lo stesso problema (es. "copertura JaCoCo insufficiente" segnalato sia come REQ che come TST),
-              CONFERMANE SOLO UNA (la piu completa) e RIGETTA l'altra con verificationNote="Duplicato di [ID]"
-            - Spiega SEMPRE la motivazione nel campo verificationNote
-            - In caso di dubbio, sii conservativo: meglio un falso negativo che un falso positivo
-            """;
+                                                RULES:
+                                                - If the quote does NOT appear anywhere in the document, set verified=false
+                                                - If the quote is clearly invented or too freely paraphrased, set verified=false
+                                                - If the issue is a false positive (the auditor misunderstood the text), set verified=false
+                                                - If the pageReference is wrong but the issue is real, CORRECT the pageReference and set verified=true
+                                                - If two issues describe the same problem (e.g., "insufficient JaCoCo coverage" reported as both REQ and TST),
+                                                        CONFIRM ONLY ONE (the most complete) and REJECT the other with verificationNote="Duplicate of [ID]"
+                                                - ALWAYS explain the reasoning in the verificationNote field
+                                                - When in doubt, be conservative: better a false negative than a false positive
+                                                """;
 
     private final ChatClient chatClient;
     private final ObjectMapper objectMapper;
@@ -73,19 +72,19 @@ public class ConsistencyManager {
     }
 
     /**
-     * Verifica, deduplica e rinumera le issue candidate.
+     * Verifies, deduplicates, and renumbers candidate issues.
      *
-     * @param documentText    testo completo del documento
-     * @param candidateIssues issues prodotte dagli agenti di analisi
-     * @return lista di issues verificate, deduplicate e rinumerate
+     * @param documentText    full text of the document
+     * @param candidateIssues issues produced by the analysis agents
+     * @return list of verified, deduplicated, and renumbered issues
      */
     public List<AuditIssue> verify(String documentText, List<AuditIssue> candidateIssues) {
         if (candidateIssues.isEmpty()) {
-            log.info("ConsistencyManager: nessuna issue da verificare");
+            log.info("ConsistencyManager: no issues to verify");
             return List.of();
         }
 
-        log.info("ConsistencyManager: avvio verifica di {} issues candidate", candidateIssues.size());
+        log.info("ConsistencyManager: starting verification of {} candidate issues", candidateIssues.size());
 
         try {
             String issuesJson = objectMapper.writerWithDefaultPrettyPrinter()
@@ -108,7 +107,7 @@ public class ConsistencyManager {
                     VerificationResponse.class, "ConsistencyManager");
 
             if (response == null || response.verifiedIssues() == null) {
-                log.warn("ConsistencyManager: risposta nulla, restituisco tutte le issue come non verificate");
+                log.warn("ConsistencyManager: null response, returning all issues unverified");
                 return renumber(candidateIssues);
             }
 
@@ -127,39 +126,39 @@ public class ConsistencyManager {
                             && vi.verificationNote().toLowerCase().contains("duplicat"))
                     .count();
 
-            // Log dettagliato delle verifiche
+            // Detailed verification log
             response.verifiedIssues().forEach(vi ->
                     log.debug("  {} [{}]: {} — {}",
                             vi.verified() ? "✓" : "✗",
                             vi.id(),
-                            vi.verified() ? "CONFERMATO" : "RIGETTATO",
+                            vi.verified() ? "CONFIRMED" : "REJECTED",
                             vi.verificationNote())
             );
 
-            log.info("ConsistencyManager: verifica completata — {} confermate, {} rigettate (di cui {} duplicati)",
+            log.info("ConsistencyManager: verification completed — {} confirmed, {} rejected (of which {} duplicates)",
                     verified.size(), rejected, duplicates);
 
-            // Rinumera sequenzialmente per categoria
+            // Renumber sequentially by category
             return renumber(verified);
 
         } catch (JsonProcessingException e) {
-            log.error("ConsistencyManager: errore nella serializzazione delle issues", e);
+            log.error("ConsistencyManager: error serializing issues", e);
             return renumber(candidateIssues);
         } catch (Exception e) {
-            log.error("ConsistencyManager: errore durante la verifica", e);
-            log.warn("Fallback: restituzione di tutte le {} issues candidate senza verifica", candidateIssues.size());
+            log.error("ConsistencyManager: error during verification", e);
+            log.warn("Fallback: returning all {} candidate issues without verification", candidateIssues.size());
             return renumber(candidateIssues);
         }
     }
 
     /**
-     * Rinumera le issue sequenzialmente per prefisso basato sulla CATEGORIA.
-     * REQ per Requisiti, TST per Testing, ARCH per Architettura, ISS per altro.
+     * Renumbers issues sequentially by prefix based on CATEGORY.
+     * REQ for Requisiti, TST for Testing, ARCH for Architettura, ISS for other.
      */
     private List<AuditIssue> renumber(List<AuditIssue> issues) {
         Map<String, AtomicInteger> counters = new HashMap<>();
 
-        // Ordinamento deterministico prima della rinumerazione
+        // Deterministic sorting before renumbering
         List<AuditIssue> sorted = issues.stream()
                 .sorted(Comparator
                         .comparing((AuditIssue i) -> i.category() != null ? i.category() : "ZZZ")
@@ -177,7 +176,7 @@ public class ConsistencyManager {
             renumbered.add(issue.withId(newId));
         }
 
-        log.info("ConsistencyManager: rinumerazione completata — {}",
+        log.info("ConsistencyManager: renumbering completed — {}",
                 counters.entrySet().stream()
                         .map(e -> e.getKey() + ":" + e.getValue().get())
                         .collect(Collectors.joining(", ")));
@@ -186,7 +185,7 @@ public class ConsistencyManager {
     }
 
     /**
-     * Determina il prefisso ID in base alla categoria dell'issue.
+     * Determines the ID prefix based on the issue category.
      */
     private String prefixForCategory(String category) {
         if (category == null || category.isBlank()) return "ISS";

@@ -12,8 +12,8 @@ import java.nio.file.Path;
 import java.util.concurrent.TimeUnit;
 
 /**
- * Compila file LaTeX (.tex) in PDF tramite pdflatex.
- * Esegue due passaggi per risolvere correttamente il sommario e i riferimenti incrociati.
+ * Compiles LaTeX (.tex) files to PDF via pdflatex.
+ * Runs two passes to correctly resolve the table of contents and cross-references.
  */
 @Service
 public class LatexCompilerService {
@@ -28,23 +28,23 @@ public class LatexCompilerService {
     }
 
     /**
-     * Compila il file .tex in PDF.
+     * Compiles the .tex file to PDF.
      *
-     * @param texFile percorso del file LaTeX da compilare
-     * @return percorso del PDF generato
-     * @throws RuntimeException se la compilazione fallisce o va in timeout
+     * @param texFile path of the LaTeX file to compile
+     * @return path of the generated PDF
+     * @throws RuntimeException if compilation fails or times out
      */
     public Path compile(Path texFile) {
-        log.info("Avvio compilazione LaTeX: {}", texFile);
+        log.info("Starting LaTeX compilation: {}", texFile);
 
         String pdflatexPath = properties.latex().pdflatexPath();
         Path workDir = texFile.getParent();
 
-        // Verifica che pdflatex sia disponibile
+        // Verify that pdflatex is available
         verifyPdflatexInstalled(pdflatexPath);
 
         try {
-            // Esegui pdflatex due volte: la prima genera il .toc, la seconda lo include
+            // Run pdflatex twice: the first generates the .toc, the second includes it
             for (int pass = 1; pass <= 2; pass++) {
                 log.info("pdflatex pass {}/2", pass);
 
@@ -63,37 +63,37 @@ public class LatexCompilerService {
                 boolean finished = process.waitFor(TIMEOUT_SECONDS, TimeUnit.SECONDS);
                 if (!finished) {
                     process.destroyForcibly();
-                    throw new RuntimeException("pdflatex timeout dopo %d secondi".formatted(TIMEOUT_SECONDS));
+                    throw new RuntimeException("pdflatex timeout after %d seconds".formatted(TIMEOUT_SECONDS));
                 }
 
                 if (process.exitValue() != 0) {
                     String errorDetail = extractLatexError(output);
-                    log.error("pdflatex errore (pass {}): {}", pass, errorDetail);
+                    log.error("pdflatex error (pass {}): {}", pass, errorDetail);
                     throw new RuntimeException(
-                            "Compilazione LaTeX fallita (exit code: %d): %s"
+                            "LaTeX compilation failed (exit code: %d): %s"
                                     .formatted(process.exitValue(), errorDetail));
                 }
 
-                log.debug("pdflatex pass {} completato con successo", pass);
+                log.debug("pdflatex pass {} completed successfully", pass);
             }
 
-            // Verifica che il PDF sia stato generato
+            // Verify that the PDF was generated
             String pdfName = texFile.getFileName().toString().replace(".tex", ".pdf");
             Path pdfFile = workDir.resolve(pdfName);
 
             if (!Files.exists(pdfFile)) {
-                throw new RuntimeException("File PDF non generato dopo la compilazione: " + pdfFile);
+                throw new RuntimeException("PDF file not generated after compilation: " + pdfFile);
             }
 
             long pdfSize = Files.size(pdfFile);
-            log.info("PDF generato con successo: {} ({} bytes)", pdfFile, pdfSize);
+            log.info("PDF generated successfully: {} ({} bytes)", pdfFile, pdfSize);
             return pdfFile;
 
         } catch (IOException e) {
-            throw new RuntimeException("Errore I/O durante la compilazione LaTeX: " + e.getMessage(), e);
+            throw new RuntimeException("I/O error during LaTeX compilation: " + e.getMessage(), e);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            throw new RuntimeException("Compilazione LaTeX interrotta", e);
+            throw new RuntimeException("LaTeX compilation interrupted", e);
         }
     }
 
@@ -106,21 +106,21 @@ public class LatexCompilerService {
 
             if (!finished || process.exitValue() != 0) {
                 throw new RuntimeException(
-                        "pdflatex non disponibile o non funzionante. " +
-                                "Installare una distribuzione LaTeX (es. TeX Live, MacTeX).");
+                        "pdflatex not available or not working. " +
+                                "Install a LaTeX distribution (e.g. TeX Live, MacTeX).");
             }
         } catch (IOException e) {
             throw new RuntimeException(
-                    "pdflatex non trovato nel PATH. Installare una distribuzione LaTeX (es. TeX Live, MacTeX). " +
-                            "Percorso cercato: " + pdflatexPath, e);
+                    "pdflatex not found in PATH. Install a LaTeX distribution (e.g. TeX Live, MacTeX). " +
+                            "Searched path: " + pdflatexPath, e);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            throw new RuntimeException("Verifica pdflatex interrotta", e);
+            throw new RuntimeException("pdflatex verification interrupted", e);
         }
     }
 
     /**
-     * Estrae le righe di errore rilevanti dall'output di pdflatex.
+     * Extracts relevant error lines from pdflatex output.
      */
     private String extractLatexError(String output) {
         var errors = new StringBuilder();
@@ -131,7 +131,7 @@ public class LatexCompilerService {
             }
         }
         if (errors.isEmpty()) {
-            // Ultime 10 righe come fallback
+            // Last 10 lines as fallback
             int start = Math.max(0, lines.length - 10);
             for (int i = start; i < lines.length; i++) {
                 errors.append(lines[i].trim()).append("\n");

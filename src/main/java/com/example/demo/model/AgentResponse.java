@@ -3,10 +3,10 @@ package com.example.demo.model;
 import java.util.List;
 
 /**
- * Risposta prodotta da un singolo agente di analisi.
+ * Response produced by a single analysis agent.
  *
- * @param agentName Nome dell'agente che ha prodotto l'analisi
- * @param issues    Lista di problemi rilevati
+ * @param agentName Name of the agent that produced the analysis
+ * @param issues    List of detected issues
  */
 public record AgentResponse(
         String agentName,

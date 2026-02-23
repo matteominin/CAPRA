@@ -1,16 +1,16 @@
 package com.example.demo.model;
 
 /**
- * Rappresenta un singolo problema rilevato durante l'audit del documento.
+ * Represents a single issue detected during the document audit.
  *
- * @param id              Identificativo univoco (es. REQ-001, TST-001)
- * @param severity        Livello di gravità
- * @param description     Descrizione dettagliata del problema
- * @param pageReference   Numero di pagina del documento dove appare il problema
- * @param quote           Citazione testuale dal documento originale
- * @param category        Categoria del problema (Requisiti, Architettura, Testing)
- * @param recommendation  Azione correttiva suggerita allo studente
- * @param confidenceScore Livello di fiducia dell'agente (0.0-1.0). Default 0.8 se non specificato dall'LLM.
+ * @param id              Unique identifier (e.g. REQ-001, TST-001)
+ * @param severity        Severity level
+ * @param description     Detailed description of the issue
+ * @param pageReference   Page number in the document where the issue appears
+ * @param quote           Verbatim quote from the original document
+ * @param category        Issue category (Requirements, Architecture, Testing)
+ * @param recommendation  Suggested corrective action for the student
+ * @param confidenceScore Agent confidence level (0.0-1.0). Defaults to 0.8 if not specified by the LLM.
  */
 public record AuditIssue(
         String id,
@@ -22,17 +22,17 @@ public record AuditIssue(
         String recommendation,
         double confidenceScore
 ) {
-    /** Compact constructor: default confidence 0.8 se non parsato. */
+    /** Compact constructor: defaults confidence to 0.8 if not parsed. */
     public AuditIssue {
         if (confidenceScore <= 0.0) confidenceScore = 0.8;
     }
 
-    /** Crea una copia con un nuovo ID. */
+    /** Creates a copy with a new ID. */
     public AuditIssue withId(String newId) {
         return new AuditIssue(newId, severity, description, pageReference, quote, category, recommendation, confidenceScore);
     }
 
-    /** Crea una copia con un nuovo confidence score. */
+    /** Creates a copy with a new confidence score. */
     public AuditIssue withConfidence(double newConfidence) {
         return new AuditIssue(id, severity, description, pageReference, quote, category, recommendation, newConfidence);
     }

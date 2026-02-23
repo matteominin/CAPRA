@@ -3,11 +3,11 @@ package com.example.demo.model;
 import java.nio.file.Path;
 
 /**
- * Risultato completo della pipeline di audit: report + file generati.
+ * Complete result of the audit pipeline: report + generated files.
  *
- * @param report  Report strutturato dell'audit
- * @param texFile Percorso del file LaTeX generato
- * @param pdfFile Percorso del PDF compilato (null se la compilazione è fallita)
+ * @param report  Structured audit report
+ * @param texFile Path of the generated LaTeX file
+ * @param pdfFile Path of the compiled PDF (null if compilation failed)
  */
 public record AuditResult(
         AuditReport report,

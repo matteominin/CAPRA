@@ -3,7 +3,7 @@ package com.example.demo.model;
 import java.util.List;
 
 /**
- * Wrapper per il parsing strutturato della risposta degli agenti di analisi.
- * Usato da Spring AI BeanOutputConverter per forzare output JSON strutturato.
+ * Wrapper for structured parsing of analysis agent responses.
+ * Used by Spring AI BeanOutputConverter to enforce structured JSON output.
  */
 public record IssuesResponse(List<AuditIssue> issues) {}

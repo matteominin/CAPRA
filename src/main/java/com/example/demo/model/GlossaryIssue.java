@@ -1,13 +1,13 @@
 package com.example.demo.model;
 
 /**
- * Una incoerenza terminologica rilevata nel documento.
+ * A terminological inconsistency detected in the document.
  *
- * @param termGroup    Il concetto/entità a cui si riferiscono i termini (es. "Utente del sistema")
- * @param variants     I diversi termini usati (es. "Utente, User, Cliente, Socio")
- * @param occurrences  Numero approssimativo di occorrenze delle varianti
- * @param suggestion   Suggerimento su quale termine usare in modo uniforme
- * @param severity     MAJOR se crea confusione reale, MINOR se solo stilistico
+ * @param termGroup    The concept/entity the terms refer to (e.g. "System user")
+ * @param variants     The different terms used (e.g. "Utente, User, Cliente, Socio")
+ * @param occurrences  Approximate number of occurrences of the variants
+ * @param suggestion   Suggestion on which term to use consistently
+ * @param severity     MAJOR if it causes real confusion, MINOR if only stylistic
  */
 public record GlossaryIssue(
         String termGroup,

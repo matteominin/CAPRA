@@ -7,28 +7,29 @@ import com.fasterxml.jackson.databind.json.JsonMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.converter.BeanOutputConverter;
 
 /**
- * Utility per chiamate LLM resilienti con parsing JSON lenient e retry automatico.
+ * Utility for resilient LLM calls with lenient JSON parsing and automatic retry.
  * <p>
- * Risolve i problemi comuni delle risposte LLM:
+ * Solves common LLM response issues:
  * <ul>
- *   <li>Trailing commas ({@code [{"a":1},]}) — causa principale degli errori Jackson</li>
- *   <li>Commenti Java-style nel JSON</li>
- *   <li>Apici singoli al posto dei doppi</li>
- *   <li>Campi non attesi (ignoreUnknown)</li>
+ *   <li>Trailing commas ({@code [{"a":1},]}) — main cause of Jackson errors</li>
+ *   <li>Java-style comments in JSON</li>
+ *   <li>Single quotes instead of double quotes</li>
+ *   <li>Unexpected fields (ignoreUnknown)</li>
  * </ul>
  * <p>
- * Strategia: usa {@link BeanOutputConverter} con un {@link ObjectMapper} lenient
- * e riprova automaticamente fino a {@value #MAX_RETRIES} volte in caso di errore.
+ * Strategy: uses {@link BeanOutputConverter} with a lenient {@link ObjectMapper}
+ * and automatically retries up to {@value #MAX_RETRIES} times on error.
  */
 public final class ResilientLlmCaller {
 
     private static final Logger log = LoggerFactory.getLogger(ResilientLlmCaller.class);
     private static final int MAX_RETRIES = 2;
 
-    /** ObjectMapper lenient che tollera trailing commas, commenti e apici singoli. */
+    /** Lenient ObjectMapper that tolerates trailing commas, comments, and single quotes. */
     private static final ObjectMapper LENIENT_MAPPER = JsonMapper.builder()
             .enable(JsonReadFeature.ALLOW_TRAILING_COMMA)
             .enable(JsonReadFeature.ALLOW_JAVA_COMMENTS)
@@ -38,41 +39,55 @@ public final class ResilientLlmCaller {
             .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
 
     private ResilientLlmCaller() {
-        // utility class — non istanziabile
+        // utility class — not instantiable
     }
 
     /**
-     * Chiama l'LLM via {@code .entity(converter)} con retry e parsing JSON lenient.
+     * Calls the LLM via {@code .entity(converter)} with retry and lenient JSON parsing.
      * <p>
-     * Il {@link BeanOutputConverter} aggiunge automaticamente le format instructions
-     * al prompt, e parsa la risposta con l'ObjectMapper lenient configurato.
+     * The {@link BeanOutputConverter} automatically adds format instructions
+     * to the prompt and parses the response with the configured lenient ObjectMapper.
      *
-     * @param chatClient   il client LLM da usare
-     * @param systemPrompt il system prompt
-     * @param userPrompt   il user prompt (le format instructions vengono aggiunte automaticamente)
-     * @param type         la classe target per il parsing
-     * @param agentName    nome dell'agente (per logging)
-     * @param <T>          tipo target
-     * @return la risposta parsata
-     * @throws RuntimeException se tutti i tentativi falliscono
+     * @param chatClient   the LLM client to use
+     * @param systemPrompt the system prompt
+     * @param userPrompt   the user prompt (format instructions are added automatically)
+     * @param type         the target class for parsing
+     * @param agentName    agent name (for logging)
+     * @param <T>          target type
+     * @return the parsed response
+     * @throws RuntimeException if all attempts fail
      */
     public static <T> T callEntity(ChatClient chatClient, String systemPrompt, String userPrompt,
                                     Class<T> type, String agentName) {
         var converter = new BeanOutputConverter<>(type, LENIENT_MAPPER);
+        // Append format instructions the same way Spring AI does internally
+        String fullUserPrompt = userPrompt + "\n\n" + converter.getFormat();
 
         Exception lastError = null;
         for (int attempt = 1; attempt <= MAX_RETRIES + 1; attempt++) {
             try {
-                return chatClient.prompt()
+                ChatResponse chatResponse = chatClient.prompt()
                         .system(systemPrompt)
-                        .user(userPrompt)
+                        .user(fullUserPrompt)
                         .call()
-                        .entity(converter);
+                        .chatResponse();
+
+                // ── Capture token usage ──────────────────────────────────────
+                captureTokenUsage(chatResponse, agentName);
+
+                // ── Parse response content ───────────────────────────────────
+                String content = (chatResponse != null && chatResponse.getResult() != null)
+                        ? chatResponse.getResult().getOutput().getText()
+                        : null;
+                if (content == null || content.isBlank()) {
+                    throw new RuntimeException("Empty or null content in LLM response");
+                }
+                return converter.convert(content);
             } catch (Exception e) {
                 lastError = e;
                 if (attempt <= MAX_RETRIES) {
                     long delay = attempt * 2000L;
-                    log.warn("{}: tentativo {}/{} fallito ({}), riprovo tra {}ms...",
+                    log.warn("{}: attempt {}/{} failed ({}), retrying in {}ms...",
                             agentName, attempt, MAX_RETRIES + 1, rootCauseMessage(e), delay);
                     try {
                         Thread.sleep(delay);
@@ -83,8 +98,36 @@ public final class ResilientLlmCaller {
                 }
             }
         }
-        throw new RuntimeException("Errore in " + agentName + " dopo " + (MAX_RETRIES + 1)
-                + " tentativi: " + lastError.getMessage(), lastError);
+        throw new RuntimeException("Error in " + agentName + " after " + (MAX_RETRIES + 1)
+                + " attempts: " + lastError.getMessage(), lastError);
+    }
+
+    private static void captureTokenUsage(ChatResponse chatResponse, String agentName) {
+        if (chatResponse == null) return;
+        try {
+            var metadata = chatResponse.getMetadata();
+            if (metadata == null) return;
+            var usage = metadata.getUsage();
+            if (usage == null) return;
+
+            long total = usage.getTotalTokens() != null ? usage.getTotalTokens().longValue() : 0L;
+            if (total == 0) return;
+
+            TokenUsageAccumulator acc = TokenUsageAccumulator.current();
+            if (acc == null) return;
+
+            // Detect provider from model name: Anthropic models contain "claude"
+            String model = metadata.getModel() != null ? metadata.getModel().toLowerCase() : "";
+            if (model.contains("claude")) {
+                acc.addAnthropicTokens(total);
+                log.debug("{}: +{} Anthropic tokens (model={})", agentName, total, metadata.getModel());
+            } else {
+                acc.addOpenAiTokens(total);
+                log.debug("{}: +{} OpenAI tokens (model={})", agentName, total, metadata.getModel());
+            }
+        } catch (Exception e) {
+            log.debug("{}: failed to capture token usage — {}", agentName, e.getMessage());
+        }
     }
 
     private static String rootCauseMessage(Exception e) {

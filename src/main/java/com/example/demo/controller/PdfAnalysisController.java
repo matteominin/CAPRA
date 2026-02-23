@@ -4,6 +4,7 @@ import com.example.demo.model.AuditReport;
 import com.example.demo.model.AuditResult;
 import com.example.demo.orchestrator.MultiAgentOrchestrator;
 import com.example.demo.service.DocumentIngestionService;
+import com.example.demo.service.TokenUsageAccumulator;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.core.io.FileSystemResource;
@@ -18,7 +19,7 @@ import java.nio.file.Files;
 import java.util.Map;
 
 /**
- * Controller REST per l'analisi dei documenti PDF.
+ * REST controller for PDF document analysis.
  */
 @RestController
 @RequestMapping("/api")
@@ -36,67 +37,78 @@ public class PdfAnalysisController {
     }
 
     /**
-     * Analizza un documento PDF e restituisce il report di audit come PDF compilato.
-     * Se la compilazione LaTeX fallisce, restituisce il file .tex.
+     * Analyzes a PDF document and returns the audit report as a compiled PDF.
+     * If LaTeX compilation fails, returns the .tex file.
      *
      * <p>Endpoint: POST /api/analyze
      * <p>Content-Type: multipart/form-data
-     * <p>Parametro: file (PDF da analizzare)
+     * <p>Parameter: file (PDF to analyze)
      */
     @PostMapping(value = "/analyze", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<?> analyze(@RequestParam("file") MultipartFile file) {
-        // ── Validazione input ──
+        // ── Input validation ──
         if (file.isEmpty()) {
-            return badRequest("File vuoto. Caricare un file PDF valido.");
+            return badRequest("Empty file. Please upload a valid PDF file.");
         }
         String filename = file.getOriginalFilename();
         if (filename == null || !filename.toLowerCase().endsWith(".pdf")) {
-            return badRequest("Formato non valido. Solo file PDF accettati.");
+            return badRequest("Invalid format. Only PDF files accepted.");
         }
         if (file.getSize() > 50 * 1024 * 1024) {
-            return badRequest("File troppo grande. Dimensione massima: 50MB.");
+            return badRequest("File too large. Maximum size: 50MB.");
         }
 
-        log.info("Ricevuta richiesta di analisi per '{}' ({} bytes)", filename, file.getSize());
+        log.info("Received analysis request for '{}' ({} bytes)", filename, file.getSize());
 
+        TokenUsageAccumulator usage = TokenUsageAccumulator.start();
         try {
             AuditResult result = orchestrator.analyze(file);
 
-            // Se il PDF è stato compilato, restituiscilo
+            long openAiTokens    = usage.getOpenAiTokens();
+            long anthropicTokens = usage.getAnthropicTokens();
+            log.info("Token usage — OpenAI: {}, Anthropic: {}", openAiTokens, anthropicTokens);
+
+            // If the PDF was compiled, return it
             if (result.pdfFile() != null && Files.exists(result.pdfFile())) {
                 Resource resource = new FileSystemResource(result.pdfFile());
                 return ResponseEntity.ok()
                         .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"audit-report.pdf\"")
                         .contentType(MediaType.APPLICATION_PDF)
+                        .header("X-OpenAI-Tokens",    String.valueOf(openAiTokens))
+                        .header("X-Anthropic-Tokens", String.valueOf(anthropicTokens))
                         .body(resource);
             }
 
-            // Fallback: restituisci il file .tex se la compilazione PDF è fallita
+            // Fallback: return the .tex file if PDF compilation failed
             if (result.texFile() != null && Files.exists(result.texFile())) {
                 Resource resource = new FileSystemResource(result.texFile());
                 return ResponseEntity.ok()
                         .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"audit-report.tex\"")
                         .contentType(MediaType.TEXT_PLAIN)
-                        .header("X-Warning", "Compilazione PDF fallita, restituito file LaTeX sorgente")
+                        .header("X-Warning",           "PDF compilation failed, returning LaTeX source file")
+                        .header("X-OpenAI-Tokens",    String.valueOf(openAiTokens))
+                        .header("X-Anthropic-Tokens", String.valueOf(anthropicTokens))
                         .body(resource);
             }
 
             return ResponseEntity.internalServerError()
-                    .body(Map.of("error", "Nessun file di output generato"));
+                    .body(Map.of("error", "No output file generated"));
 
         } catch (Exception e) {
-            log.error("Errore durante l'analisi di '{}'", filename, e);
+            log.error("Error during analysis of '{}'", filename, e);
             return ResponseEntity.internalServerError()
                     .body(Map.of(
-                            "error", "Errore durante l'analisi",
-                            "message", e.getMessage() != null ? e.getMessage() : "Errore sconosciuto"
+                            "error", "Error during analysis",
+                            "message", e.getMessage() != null ? e.getMessage() : "Unknown error"
                     ));
+        } finally {
+            TokenUsageAccumulator.clear();
         }
     }
 
     /**
-     * Analizza un documento PDF e restituisce solo il report JSON (senza generare LaTeX/PDF).
-     * Utile per debug, integrazione con altri sistemi, o quando non serve il PDF.
+     * Analyzes a PDF document and returns only the JSON report (without generating LaTeX/PDF).
+     * Useful for debugging, integration with other systems, or when PDF is not needed.
      *
      * <p>Endpoint: POST /api/analyze/json
      */
@@ -104,14 +116,14 @@ public class PdfAnalysisController {
             produces = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<?> analyzeJson(@RequestParam("file") MultipartFile file) {
         if (file.isEmpty()) {
-            return badRequest("File vuoto. Caricare un file PDF valido.");
+            return badRequest("Empty file. Please upload a valid PDF file.");
         }
         String filename = file.getOriginalFilename();
         if (filename == null || !filename.toLowerCase().endsWith(".pdf")) {
-            return badRequest("Formato non valido. Solo file PDF accettati.");
+            return badRequest("Invalid format. Only PDF files accepted.");
         }
 
-        log.info("Ricevuta richiesta di analisi JSON per '{}' ({} bytes)", filename, file.getSize());
+        log.info("Received JSON analysis request for '{}' ({} bytes)", filename, file.getSize());
 
         try {
             AuditResult result = orchestrator.analyze(file);
@@ -119,17 +131,17 @@ public class PdfAnalysisController {
             return ResponseEntity.ok(report);
 
         } catch (Exception e) {
-            log.error("Errore durante l'analisi JSON di '{}'", filename, e);
+            log.error("Error during JSON analysis of '{}'", filename, e);
             return ResponseEntity.internalServerError()
                     .body(Map.of(
-                            "error", "Errore durante l'analisi",
-                            "message", e.getMessage() != null ? e.getMessage() : "Errore sconosciuto"
+                            "error", "Error during analysis",
+                            "message", e.getMessage() != null ? e.getMessage() : "Unknown error"
                     ));
         }
     }
 
     /**
-     * Verifica lo stato dei servizi dipendenti (Flask PDF extractor).
+     * Checks the status of dependent services (Flask PDF extractor).
      *
      * <p>Endpoint: GET /api/health
      */

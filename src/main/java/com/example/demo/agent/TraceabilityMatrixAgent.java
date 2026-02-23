@@ -12,43 +12,43 @@ import org.springframework.stereotype.Service;
 import java.util.List;
 
 /**
- * Agente che costruisce automaticamente una matrice di tracciabilità
- * Requisiti/UC → Design → Test, segnalando i buchi di copertura.
+ * Agent that automatically builds a traceability matrix
+ * Requirements/UC → Design → Test, highlighting coverage gaps.
  * <p>
- * Questo è uno dei controlli più importanti in SWE: gli studenti
- * quasi mai producono una matrice completa.
+ * This is one of the most important checks in SWE: students
+ * almost never produce a complete matrix.
  */
 @Service
 public class TraceabilityMatrixAgent {
 
     private static final Logger log = LoggerFactory.getLogger(TraceabilityMatrixAgent.class);
 
-    private static final String SYSTEM_PROMPT = """
-            Sei un esperto di Ingegneria del Software specializzato in tracciabilita dei requisiti.
+        private static final String SYSTEM_PROMPT = """
+                        You are a Software Engineering expert specialized in requirements traceability.
             
-            COMPITO:
-            Analizza il documento e costruisci una MATRICE DI TRACCIABILITA che mappa:
-            - Use Case / Requisiti → Design (classi, componenti, pattern) → Test Case
+                        TASK:
+                        Analyze the document and build a TRACEABILITY MATRIX that maps:
+                        - Use Case / Requirements → Design (classes, components, patterns) → Test Case
             
-            Per ogni Use Case o Requisito Funzionale presente nel documento:
-            1. Identifica il suo ID e nome (es. UC-1 - Registrazione utente)
-            2. Cerca se nel documento esiste una descrizione di design/architettura correlata
-               (es. classe, controller, DAO, sequence diagram che lo implementa)
-            3. Cerca se nel documento esiste un test case che verifica quel requisito
-            4. Se manca il design O il test, segnala il gap
+                        For each Use Case or Functional Requirement present in the document:
+                        1. Identify its ID and name (e.g., UC-1 - User Registration)
+                        2. Check if the document contains a related design/architecture description
+                             (e.g., class, controller, DAO, sequence diagram implementing it)
+                        3. Check if the document contains a test case verifying that requirement
+                        4. If design OR test is missing, report the gap
             
-            REGOLE:
-            - Elenca TUTTI i Use Case / requisiti trovati nel documento, anche quelli ben coperti
-            - hasDesign = true se c'e' almeno un riferimento architetturale (classe, controller, DAO, diagram)
-            - hasTest = true se c'e' almeno un test case che lo copre
-            - designRef: scrivi brevemente COSA implementa quel requisito (es. "ReservationController, DAO pattern")
-              Se non c'e', scrivi "Nessun riferimento trovato"
-            - testRef: scrivi brevemente QUALE test lo copre (es. "testReservation_Success, testReservation_InvalidDate")
-              Se non c'e', scrivi "Nessun test trovato"
-            - gap: descrivi in 1 frase il gap principale. Se tutto coperto, stringa VUOTA "".
-            - Scrivi in ITALIANO
-            - NON inventare Use Case che non esistono nel documento
-            """;
+                        RULES:
+                        - List ALL Use Cases / requirements found in the document, even those well covered
+                        - hasDesign = true if there is at least one architectural reference (class, controller, DAO, diagram)
+                        - hasTest = true if there is at least one test case covering it
+                        - designRef: briefly describe WHAT implements that requirement (e.g., "ReservationController, DAO pattern")
+                            If not found, write "No reference found"
+                        - testRef: briefly describe WHICH test covers it (e.g., "testReservation_Success, testReservation_InvalidDate")
+                            If not found, write "No test found"
+                        - gap: describe in 1 sentence the main gap. If all covered, EMPTY string "".
+                        - Write in ITALIAN
+                        - DO NOT invent Use Cases that do not exist in the document
+                        """;
 
     private final ChatClient chatClient;
 
@@ -57,13 +57,13 @@ public class TraceabilityMatrixAgent {
     }
 
     /**
-     * Analizza il documento e produce la matrice di tracciabilità.
+     * Analyzes the document and produces the traceability matrix.
      *
-     * @param documentText testo completo del documento
-     * @return lista di entry della matrice
+     * @param documentText full text of the document
+     * @return list of traceability matrix entries
      */
     public List<TraceabilityEntry> buildMatrix(String documentText) {
-        log.info("TraceabilityMatrixAgent: costruzione matrice di tracciabilita...");
+        log.info("TraceabilityMatrixAgent: building traceability matrix...");
 
         try {
             TraceabilityMatrixResponse response = ResilientLlmCaller.callEntity(
@@ -92,11 +92,11 @@ public class TraceabilityMatrixAgent {
                 return response.entries();
             }
 
-            log.warn("TraceabilityMatrixAgent: risposta nulla dall'LLM");
+            log.warn("TraceabilityMatrixAgent: null response from LLM");
             return List.of();
 
         } catch (Exception e) {
-            log.error("TraceabilityMatrixAgent: errore durante la costruzione della matrice", e);
+            log.error("TraceabilityMatrixAgent: error during matrix construction", e);
             return List.of();
         }
     }

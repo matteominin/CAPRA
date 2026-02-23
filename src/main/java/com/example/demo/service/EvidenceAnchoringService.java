@@ -9,36 +9,36 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Servizio di Evidence Anchoring: verifica NON-LLM che le citazioni (quote)
- * esistano realmente nel documento usando fuzzy string matching (Levenshtein normalizzato).
+ * Evidence Anchoring service: NON-LLM verification that quotes
+ * actually exist in the document using fuzzy string matching (normalized Levenshtein).
  * <p>
- * Questo è il singolo miglioramento più efficace contro le allucinazioni:
- * se l'LLM inventa una citazione, il fuzzy match la rileva e la scarta.
+ * This is the single most effective improvement against hallucinations:
+ * if the LLM fabricates a quote, the fuzzy match detects and discards it.
  * <p>
- * Approccio:
- * - Normalizza testo e quote (lowercase, rimuovi spazi multipli, punteggiatura)
- * - Cerca il miglior match con sliding window nel documento
- * - Se il similarity score è < soglia, l'issue viene scartata
- * - Se il match è buono, il confidence score viene aggiustato in base alla qualità del match
+ * Approach:
+ * - Normalize text and quotes (lowercase, remove extra spaces, punctuation)
+ * - Search for the best match with sliding window in the document
+ * - If the similarity score is below the threshold, the issue is discarded
+ * - If the match is good, the confidence score is adjusted based on match quality
  */
 @Service
 public class EvidenceAnchoringService {
 
     private static final Logger log = LoggerFactory.getLogger(EvidenceAnchoringService.class);
 
-    /** Soglia minima di similarità per accettare una citazione (0.0-1.0). */
+    /** Minimum similarity threshold for accepting a quote (0.0-1.0). */
     private static final double MIN_SIMILARITY = 0.45;
 
-    /** Soglia sopra la quale il confidence viene aumentato. */
+    /** Threshold above which confidence gets boosted. */
     private static final double BOOST_THRESHOLD = 0.70;
 
     /**
-     * Filtra le issue verificando che le citazioni esistano nel documento.
-     * Aggiusta il confidence score in base alla qualità del match.
+     * Filters issues by verifying that quotes exist in the document.
+     * Adjusts the confidence score based on match quality.
      *
-     * @param documentText testo completo del documento
-     * @param issues       issue da verificare
-     * @return issue filtrate con confidence aggiornato
+     * @param documentText full text of the document
+     * @param issues       issues to verify
+     * @return filtered issues with updated confidence
      */
     public List<AuditIssue> anchorEvidence(String documentText, List<AuditIssue> issues) {
         if (issues.isEmpty()) return issues;
@@ -49,14 +49,14 @@ public class EvidenceAnchoringService {
 
         for (AuditIssue issue : issues) {
             if (issue.quote() == null || issue.quote().isBlank()) {
-                // No quote: penalizza il confidence ma non scartare
+                // No quote: penalize confidence but don't discard
                 anchored.add(issue.withConfidence(issue.confidenceScore() * 0.5));
                 continue;
             }
 
             String normalizedQuote = normalize(issue.quote());
             if (normalizedQuote.length() < 15) {
-                // Quote troppo corta per un match affidabile: accetta con penalità
+                // Quote too short for reliable match: accept with penalty
                 anchored.add(issue.withConfidence(issue.confidenceScore() * 0.7));
                 continue;
             }
@@ -68,13 +68,13 @@ public class EvidenceAnchoringService {
                         issue.id(), similarity, truncate(issue.quote(), 80));
                 rejected++;
             } else {
-                // Aggiusta il confidence in base al match
+                    // Adjust confidence based on match
                 double adjustedConfidence;
                 if (similarity >= BOOST_THRESHOLD) {
-                    // Ottimo match: boost fino a +15%
+                    // Excellent match: boost up to +15%
                     adjustedConfidence = Math.min(1.0, issue.confidenceScore() * (1.0 + (similarity - BOOST_THRESHOLD) * 0.5));
                 } else {
-                    // Match accettabile ma non perfetto: penalità proporzionale
+                    // Acceptable but not perfect match: proportional penalty
                     double penalty = 1.0 - ((BOOST_THRESHOLD - similarity) / (BOOST_THRESHOLD - MIN_SIMILARITY)) * 0.3;
                     adjustedConfidence = issue.confidenceScore() * penalty;
                 }
@@ -85,28 +85,28 @@ public class EvidenceAnchoringService {
             }
         }
 
-        log.info("EvidenceAnchoring: {}/{} issues confermate, {} scartate per citazione non trovata",
+        log.info("EvidenceAnchoring: {}/{} issues confirmed, {} discarded for quote not found",
                 anchored.size(), issues.size(), rejected);
 
         return anchored;
     }
 
     /**
-     * Trova il miglior match di `query` dentro `text` usando una sliding window
-     * con distanza di Levenshtein normalizzata.
-     * Per performance, usa trigram overlap come pre-filtro.
+     * Finds the best match of `query` inside `text` using a sliding window
+     * with normalized Levenshtein distance.
+     * For performance, uses trigram overlap as a pre-filter.
      *
-     * @return miglior similarity (0.0-1.0)
+     * @return best similarity (0.0-1.0)
      */
     private double bestSlidingWindowSimilarity(String text, String query) {
         int queryLen = query.length();
         if (queryLen == 0) return 0.0;
 
-        // Step 1: Prova match esatto (substring contains) — O(n)
+        // Step 1: Try exact match (substring contains) — O(n)
         if (text.contains(query)) return 1.0;
 
-        // Step 2: Trigram overlap rapido su finestre per pre-filtrare
-        // Usiamo una finestra leggermente più grande della query
+        // Step 2: Fast trigram overlap on windows for pre-filtering
+        // Use a window slightly larger than the query
         int windowSize = Math.min(text.length(), (int) (queryLen * 1.5));
         int step = Math.max(1, queryLen / 4);
 
@@ -120,14 +120,14 @@ public class EvidenceAnchoringService {
             double trigramScore = trigramOverlap(window, query);
             if (trigramScore < MIN_SIMILARITY * 0.6) continue; // skip dissimilar windows
 
-            // Calcola per finestre con buon trigram score
+            // Compute for windows with good trigram score
             double sim = normalizedLevenshteinSimilarity(window, query);
             bestSimilarity = Math.max(bestSimilarity, sim);
 
-            if (bestSimilarity >= 0.95) break; // buono abbastanza
+            if (bestSimilarity >= 0.95) break; // good enough
         }
 
-        // Step 3: Se finestra grande non ha trovato bene, prova con finestra = queryLen
+        // Step 3: If large window didn't find well, try with window = queryLen
         if (bestSimilarity < BOOST_THRESHOLD && text.length() > queryLen) {
             step = Math.max(1, queryLen / 3);
             for (int i = 0; i <= text.length() - queryLen; i += step) {
@@ -145,16 +145,16 @@ public class EvidenceAnchoringService {
     }
 
     /**
-     * Calcola la similarità normalizzata tra due stringhe usando Levenshtein.
-     * Restituisce 1.0 per stringhe identiche, 0.0 per completamente diverse.
-     * Per lunghe stringhe, usa un approccio approssimato per performance.
+     * Computes normalized similarity between two strings using Levenshtein.
+     * Returns 1.0 for identical strings, 0.0 for completely different.
+     * For long strings, uses an approximate approach for performance.
      */
     private double normalizedLevenshteinSimilarity(String a, String b) {
         if (a.equals(b)) return 1.0;
         int maxLen = Math.max(a.length(), b.length());
         if (maxLen == 0) return 1.0;
 
-        // Per stringhe molto lunghe (>500 char), usa confronto a blocchi
+        // For very long strings (>500 char), use block comparison
         if (a.length() > 500 || b.length() > 500) {
             return longestCommonSubsequenceRatio(a, b);
         }
@@ -164,7 +164,7 @@ public class EvidenceAnchoringService {
     }
 
     /**
-     * Calcolo efficiente della distanza di Levenshtein (spazio O(min(m,n))).
+     * Efficient Levenshtein distance computation (space O(min(m,n))).
      */
     private int levenshteinDistance(String a, String b) {
         if (a.length() > b.length()) { String t = a; a = b; b = t; }
@@ -187,17 +187,17 @@ public class EvidenceAnchoringService {
     }
 
     /**
-     * Rapporto LCS per stringhe lunghe — O(n*m) ma con early exit.
+     * LCS ratio for long strings — O(n*m) with early exit.
      */
     private double longestCommonSubsequenceRatio(String a, String b) {
-        // Usa word-level per performance
+        // Use word-level for performance
         String[] wordsA = a.split("\\s+");
         String[] wordsB = b.split("\\s+");
 
         int m = wordsA.length, n = wordsB.length;
         if (m == 0 || n == 0) return 0.0;
 
-        // Limita per performance
+        // Limit for performance
         if (m > 200) { wordsA = java.util.Arrays.copyOf(wordsA, 200); m = 200; }
         if (n > 200) { wordsB = java.util.Arrays.copyOf(wordsB, 200); n = 200; }
 
@@ -220,7 +220,7 @@ public class EvidenceAnchoringService {
     }
 
     /**
-     * Trigram overlap rapido per pre-filtrare finestre candidate.
+     * Fast trigram overlap for pre-filtering candidate windows.
      */
     private double trigramOverlap(String a, String b) {
         if (a.length() < 3 || b.length() < 3) return 0.0;
@@ -239,7 +239,7 @@ public class EvidenceAnchoringService {
     }
 
     /**
-     * Normalizza il testo: lowercase, rimuovi punteggiatura, collassa spazi.
+     * Normalizes text: lowercase, remove punctuation, collapse whitespace.
      */
     private String normalize(String text) {
         if (text == null) return "";

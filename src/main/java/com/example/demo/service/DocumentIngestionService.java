@@ -17,8 +17,8 @@ import java.time.Duration;
 import java.util.Map;
 
 /**
- * Client HTTP per il servizio Flask di estrazione PDF.
- * Delega tutta la logica di parsing (testo + immagini via OpenAI Vision) al servizio Python.
+ * HTTP client for the Flask PDF extraction service.
+ * Delegates all parsing logic (text + images via OpenAI Vision) to the Python service.
  */
 @Service
 public class DocumentIngestionService {
@@ -28,7 +28,7 @@ public class DocumentIngestionService {
     private final RestClient restClient;
 
     public DocumentIngestionService(AuditProperties properties) {
-        // Timeout generoso: l'estrazione con OpenAI Vision su PDF grandi può richiedere minuti
+        // Generous timeout: extraction with OpenAI Vision on large PDFs can take minutes
         SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
         factory.setConnectTimeout(Duration.ofSeconds(30));
         factory.setReadTimeout(Duration.ofMinutes(5));
@@ -40,16 +40,16 @@ public class DocumentIngestionService {
     }
 
     /**
-     * Invia il PDF al servizio Flask e restituisce il testo completo estratto,
-     * incluse le descrizioni delle immagini generate via OpenAI Vision.
+     * Sends the PDF to the Flask service and returns the full extracted text,
+     * including image descriptions generated via OpenAI Vision.
      *
-     * @param file il file PDF caricato dall'utente
-     * @return testo completo del documento
-     * @throws RuntimeException se l'estrazione fallisce
+     * @param file the PDF file uploaded by the user
+     * @return full text of the document
+     * @throws RuntimeException if the extraction fails
      */
     public String extractFullText(MultipartFile file) {
         String filename = file.getOriginalFilename() != null ? file.getOriginalFilename() : "document.pdf";
-        log.info("Invio PDF '{}' ({} bytes) al servizio di estrazione", filename, file.getSize());
+        log.info("Sending PDF '{}' ({} bytes) to extraction service", filename, file.getSize());
 
         try {
             byte[] fileBytes = file.getBytes();
@@ -72,24 +72,24 @@ public class DocumentIngestionService {
 
             if (response != null && Boolean.TRUE.equals(response.get("success"))) {
                 String text = (String) response.get("text");
-                log.info("Estrazione completata: {} caratteri estratti", text.length());
+                log.info("Extraction completed: {} characters extracted", text.length());
                 return text;
             }
 
-            String error = response != null ? response.toString() : "risposta nulla dal servizio";
-            throw new RuntimeException("Estrazione PDF fallita: " + error);
+            String error = response != null ? response.toString() : "null response from service";
+            throw new RuntimeException("PDF extraction failed: " + error);
 
         } catch (IOException e) {
-            throw new RuntimeException("Impossibile leggere il file caricato: " + e.getMessage(), e);
+            throw new RuntimeException("Unable to read the uploaded file: " + e.getMessage(), e);
         } catch (RestClientException e) {
             throw new RuntimeException(
-                    "Servizio di estrazione PDF non raggiungibile. Assicurati che il servizio Flask sia attivo su "
-                            + "la porta configurata. Dettaglio: " + e.getMessage(), e);
+                    "PDF extraction service unreachable. Ensure the Flask service is running on "
+                            + "the configured port. Details: " + e.getMessage(), e);
         }
     }
 
     /**
-     * Verifica che il servizio Flask sia raggiungibile.
+     * Checks whether the Flask service is reachable.
      */
     public boolean isServiceAvailable() {
         try {
@@ -100,7 +100,7 @@ public class DocumentIngestionService {
                     .body(Map.class);
             return health != null && "ok".equals(health.get("status"));
         } catch (Exception e) {
-            log.warn("Servizio di estrazione PDF non disponibile: {}", e.getMessage());
+            log.warn("PDF extraction service not available: {}", e.getMessage());
             return false;
         }
     }

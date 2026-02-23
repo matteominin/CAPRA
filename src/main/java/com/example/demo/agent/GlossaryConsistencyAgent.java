@@ -12,44 +12,44 @@ import org.springframework.stereotype.Service;
 import java.util.List;
 
 /**
- * Agente che rileva incoerenze terminologiche nel documento:
- * - Stessa entità chiamata con nomi diversi (es. "Utente"/"User"/"Cliente")
- * - Termini tecnici usati in modo intercambiabile (es. "prenotazione"/"reservation")
- * - Termini tecnici mai definiti nel glossario
+ * Agent that detects terminological inconsistencies in the document:
+ * - Same entity called by different names (e.g. "Utente"/"User"/"Cliente")
+ * - Technical terms used interchangeably (e.g. "prenotazione"/"reservation")
+ * - Technical terms never defined in the glossary
  */
 @Service
 public class GlossaryConsistencyAgent {
 
     private static final Logger log = LoggerFactory.getLogger(GlossaryConsistencyAgent.class);
 
-    private static final String SYSTEM_PROMPT = """
-            Sei un esperto di Ingegneria del Software specializzato in qualita della documentazione.
+     private static final String SYSTEM_PROMPT = """
+                You are a Software Engineering expert specialized in documentation quality.
             
-            COMPITO:
-            Analizza il documento e identifica INCOERENZE TERMINOLOGICHE:
+                TASK:
+                Analyze the document and identify TERMINOLOGICAL INCONSISTENCIES:
             
-            1. SINONIMI INVOLONTARI: la stessa entita/concetto viene chiamata con nomi diversi
-               in punti diversi del documento.
-               Esempio: "Utente" in sezione 2, "User" in sezione 4, "Cliente" in sezione 6
+                1. UNINTENTIONAL SYNONYMS: the same entity/concept is called by different names
+                    in different parts of the document.
+                    Example: "User" in section 2, "Client" in section 4, "Customer" in section 6
             
-            2. TERMINI TECNICI MAI DEFINITI: parole tecniche usate senza spiegazione
-               (soprattutto se il documento NON ha un glossario)
+                2. UNDEFINED TECHNICAL TERMS: technical words used without explanation
+                    (especially if the document does NOT have a glossary)
             
-            3. ACRONIMI INCOERENTI: stessa sigla con significati diversi, o sigle mai espanse
+                3. INCONSISTENT ACRONYMS: same acronym with different meanings, or acronyms never expanded
             
-            4. ITALIANO/INGLESE MISTO: uso incoerente di termini italiani e inglesi
-               per lo stesso concetto (es. "prenotazione" vs "reservation")
+                4. MIXED LANGUAGE: inconsistent use of Italian and English terms
+                    for the same concept (e.g., "prenotazione" vs "reservation")
             
-            REGOLE:
-            - Segnala SOLO incoerenze REALI che hai trovato nel testo
-            - Per ogni gruppo, elenca TUTTE le varianti usate
-            - severity = "MAJOR" se l'incoerenza puo causare fraintendimenti reali
-            - severity = "MINOR" se e' solo una questione di stile
-            - suggestion: indica quale termine dovrebbe essere usato uniformemente e perche
-            - Scrivi in ITALIANO
-            - NON inventare incoerenze: se il documento e' terminologicamente coerente, restituisci lista vuota
-            - Massimo 10 issue: segnala solo le piu significative
-            """;
+                RULES:
+                - Report ONLY REAL inconsistencies found in the text
+                - For each group, list ALL variants used
+                - severity = "MAJOR" if the inconsistency can cause real misunderstandings
+                - severity = "MINOR" if it's just a matter of style
+                - suggestion: indicate which term should be used uniformly and why
+                - Write in ITALIAN
+                - DO NOT invent inconsistencies: if the document is terminologically consistent, return an empty list
+                - Maximum 10 issues: report only the most significant
+                """;
 
     private final ChatClient chatClient;
 
@@ -58,13 +58,13 @@ public class GlossaryConsistencyAgent {
     }
 
     /**
-     * Analizza il documento per trovare incoerenze terminologiche.
+     * Analyzes the document for terminological inconsistencies.
      *
-     * @param documentText testo completo del documento
-     * @return lista di problemi di glossario
+     * @param documentText full text of the document
+     * @return list of glossary issues
      */
     public List<GlossaryIssue> analyze(String documentText) {
-        log.info("GlossaryConsistencyAgent: analisi terminologica in corso...");
+        log.info("GlossaryConsistencyAgent: terminological analysis in progress...");
 
         try {
             GlossaryResponse response = ResilientLlmCaller.callEntity(
@@ -83,16 +83,16 @@ public class GlossaryConsistencyAgent {
             if (response != null && response.issues() != null) {
                 long major = response.issues().stream()
                         .filter(i -> "MAJOR".equalsIgnoreCase(i.severity())).count();
-                log.info("GlossaryConsistencyAgent: {} incoerenze trovate ({} MAJOR, {} MINOR)",
+                log.info("GlossaryConsistencyAgent: {} inconsistencies found ({} MAJOR, {} MINOR)",
                         response.issues().size(), major, response.issues().size() - major);
                 return response.issues();
             }
 
-            log.warn("GlossaryConsistencyAgent: risposta nulla dall'LLM");
+            log.warn("GlossaryConsistencyAgent: null response from LLM");
             return List.of();
 
         } catch (Exception e) {
-            log.error("GlossaryConsistencyAgent: errore durante l'analisi", e);
+            log.error("GlossaryConsistencyAgent: error during analysis", e);
             return List.of();
         }
     }
