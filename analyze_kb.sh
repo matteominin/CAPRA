@@ -105,13 +105,14 @@ for subdir in "$KB_DIR"/*/; do
     [[ -z "$EXEC_TIME" ]] && EXEC_TIME="0"
 
     # ── Extract token headers ─────────────────────────────────────────────────
-    OPENAI_TOKENS="$(grep -i '^x-openai-tokens:' "$headers_tmp" 2>/dev/null \
-                      | head -1 | awk '{print $2}' | tr -d '\r\n')"
-    ANTHROPIC_TOKENS="$(grep -i '^x-anthropic-tokens:' "$headers_tmp" 2>/dev/null \
-                         | head -1 | awk '{print $2}' | tr -d '\r\n')"
+    extract_header() { grep -i "^$1:" "$headers_tmp" 2>/dev/null | head -1 | awk '{print $2}' | tr -d '\r\n'; }
 
-    [[ -z "$OPENAI_TOKENS"    ]] && OPENAI_TOKENS="N/A"
-    [[ -z "$ANTHROPIC_TOKENS" ]] && ANTHROPIC_TOKENS="N/A"
+    OAI_IN=$(extract_header  "x-openai-input-tokens");     [[ -z "$OAI_IN"  ]] && OAI_IN="N/A"
+    OAI_OUT=$(extract_header "x-openai-output-tokens");    [[ -z "$OAI_OUT" ]] && OAI_OUT="N/A"
+    OAI_TOT=$(extract_header "x-openai-total-tokens");     [[ -z "$OAI_TOT" ]] && OAI_TOT="N/A"
+    ANT_IN=$(extract_header  "x-anthropic-input-tokens");  [[ -z "$ANT_IN"  ]] && ANT_IN="N/A"
+    ANT_OUT=$(extract_header "x-anthropic-output-tokens"); [[ -z "$ANT_OUT" ]] && ANT_OUT="N/A"
+    ANT_TOT=$(extract_header "x-anthropic-total-tokens");  [[ -z "$ANT_TOT" ]] && ANT_TOT="N/A"
 
     # ── Detect content type (for log readability) ─────────────────────────────
     CONTENT_TYPE="$(grep -i '^content-type:' "$headers_tmp" 2>/dev/null \
@@ -131,8 +132,8 @@ for subdir in "$KB_DIR"/*/; do
       echo "HTTP status      : $HTTP_CODE"
       echo "Content-Type     : ${CONTENT_TYPE:-unknown}"
       echo "Execution time   : ${EXEC_TIME}s"
-      echo "OpenAI tokens    : $OPENAI_TOKENS"
-      echo "Anthropic tokens : $ANTHROPIC_TOKENS"
+      echo "OpenAI tokens    : in=$OAI_IN  out=$OAI_OUT  tot=$OAI_TOT"
+      echo "Anthropic tokens : in=$ANT_IN  out=$ANT_OUT  tot=$ANT_TOT"
       echo ""
       echo "Response headers:"
       cat "$headers_tmp"
@@ -147,8 +148,12 @@ for subdir in "$KB_DIR"/*/; do
     # ── Append to usage.txt ───────────────────────────────────────────────────
     {
       echo "--- $filename ---"
-      echo "openai_tokens: $OPENAI_TOKENS"
-      echo "anthropic_tokens: $ANTHROPIC_TOKENS"
+      echo "openai_input_tokens: $OAI_IN"
+      echo "openai_output_tokens: $OAI_OUT"
+      echo "openai_total_tokens: $OAI_TOT"
+      echo "anthropic_input_tokens: $ANT_IN"
+      echo "anthropic_output_tokens: $ANT_OUT"
+      echo "anthropic_total_tokens: $ANT_TOT"
       echo "execution_time_seconds: $EXEC_TIME"
       echo ""
     } >> "$USAGE_FILE"
@@ -157,7 +162,7 @@ for subdir in "$KB_DIR"/*/; do
 
     # ── Console summary ───────────────────────────────────────────────────────
     if [[ "$HTTP_CODE" == "200" ]]; then
-      echo "     OK  | OpenAI: $OPENAI_TOKENS | Anthropic: $ANTHROPIC_TOKENS | Time: ${EXEC_TIME}s"
+      echo "     OK  | OAI: ${OAI_IN}in/${OAI_OUT}out | ANT: ${ANT_IN}in/${ANT_OUT}out | Time: ${EXEC_TIME}s"
     else
       echo "     FAIL (HTTP $HTTP_CODE) | Time: ${EXEC_TIME}s"
       if [[ -n "$error_body" ]]; then

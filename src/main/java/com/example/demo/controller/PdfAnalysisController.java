@@ -64,9 +64,12 @@ public class PdfAnalysisController {
         try {
             AuditResult result = orchestrator.analyze(file);
 
-            long openAiTokens    = usage.getOpenAiTokens();
-            long anthropicTokens = usage.getAnthropicTokens();
-            log.info("Token usage — OpenAI: {}, Anthropic: {}", openAiTokens, anthropicTokens);
+            long oaiIn  = usage.getOpenAiInputTokens();
+            long oaiOut = usage.getOpenAiOutputTokens();
+            long antIn  = usage.getAnthropicInputTokens();
+            long antOut = usage.getAnthropicOutputTokens();
+            log.info("Token usage — OpenAI: {}in/{}out (tot {}), Anthropic: {}in/{}out (tot {})",
+                    oaiIn, oaiOut, oaiIn + oaiOut, antIn, antOut, antIn + antOut);
 
             // If the PDF was compiled, return it
             if (result.pdfFile() != null && Files.exists(result.pdfFile())) {
@@ -74,8 +77,12 @@ public class PdfAnalysisController {
                 return ResponseEntity.ok()
                         .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"audit-report.pdf\"")
                         .contentType(MediaType.APPLICATION_PDF)
-                        .header("X-OpenAI-Tokens",    String.valueOf(openAiTokens))
-                        .header("X-Anthropic-Tokens", String.valueOf(anthropicTokens))
+                        .header("X-OpenAI-Input-Tokens",      String.valueOf(oaiIn))
+                        .header("X-OpenAI-Output-Tokens",     String.valueOf(oaiOut))
+                        .header("X-OpenAI-Total-Tokens",      String.valueOf(oaiIn + oaiOut))
+                        .header("X-Anthropic-Input-Tokens",   String.valueOf(antIn))
+                        .header("X-Anthropic-Output-Tokens",  String.valueOf(antOut))
+                        .header("X-Anthropic-Total-Tokens",   String.valueOf(antIn + antOut))
                         .body(resource);
             }
 
@@ -85,9 +92,13 @@ public class PdfAnalysisController {
                 return ResponseEntity.ok()
                         .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"audit-report.tex\"")
                         .contentType(MediaType.TEXT_PLAIN)
-                        .header("X-Warning",           "PDF compilation failed, returning LaTeX source file")
-                        .header("X-OpenAI-Tokens",    String.valueOf(openAiTokens))
-                        .header("X-Anthropic-Tokens", String.valueOf(anthropicTokens))
+                        .header("X-Warning",                  "PDF compilation failed, returning LaTeX source file")
+                        .header("X-OpenAI-Input-Tokens",      String.valueOf(oaiIn))
+                        .header("X-OpenAI-Output-Tokens",     String.valueOf(oaiOut))
+                        .header("X-OpenAI-Total-Tokens",      String.valueOf(oaiIn + oaiOut))
+                        .header("X-Anthropic-Input-Tokens",   String.valueOf(antIn))
+                        .header("X-Anthropic-Output-Tokens",  String.valueOf(antOut))
+                        .header("X-Anthropic-Total-Tokens",   String.valueOf(antIn + antOut))
                         .body(resource);
             }
 

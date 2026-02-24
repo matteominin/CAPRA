@@ -110,8 +110,9 @@ public final class ResilientLlmCaller {
             var usage = metadata.getUsage();
             if (usage == null) return;
 
-            long total = usage.getTotalTokens() != null ? usage.getTotalTokens().longValue() : 0L;
-            if (total == 0) return;
+            long input  = usage.getPromptTokens()     != null ? usage.getPromptTokens().longValue()     : 0L;
+            long output = usage.getCompletionTokens() != null ? usage.getCompletionTokens().longValue() : 0L;
+            if (input == 0 && output == 0) return;
 
             TokenUsageAccumulator acc = TokenUsageAccumulator.current();
             if (acc == null) return;
@@ -119,11 +120,13 @@ public final class ResilientLlmCaller {
             // Detect provider from model name: Anthropic models contain "claude"
             String model = metadata.getModel() != null ? metadata.getModel().toLowerCase() : "";
             if (model.contains("claude")) {
-                acc.addAnthropicTokens(total);
-                log.debug("{}: +{} Anthropic tokens (model={})", agentName, total, metadata.getModel());
+                acc.addAnthropicTokens(input, output);
+                log.debug("{}: +{} in / +{} out Anthropic tokens (model={})",
+                        agentName, input, output, metadata.getModel());
             } else {
-                acc.addOpenAiTokens(total);
-                log.debug("{}: +{} OpenAI tokens (model={})", agentName, total, metadata.getModel());
+                acc.addOpenAiTokens(input, output);
+                log.debug("{}: +{} in / +{} out OpenAI tokens (model={})",
+                        agentName, input, output, metadata.getModel());
             }
         } catch (Exception e) {
             log.debug("{}: failed to capture token usage — {}", agentName, e.getMessage());

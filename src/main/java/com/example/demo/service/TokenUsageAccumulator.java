@@ -4,22 +4,11 @@ import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * Per-request token-usage accumulator backed by an {@link InheritableThreadLocal}.
- *
- * <p>Usage pattern:
- * <pre>
- *   TokenUsageAccumulator.start();          // controller, before pipeline
- *   try {
- *       orchestrator.analyze(file);
- *   } finally {
- *       TokenUsageAccumulator.clear();      // always clean up
- *   }
- *   long openAi     = TokenUsageAccumulator.current().getOpenAiTokens();
- *   long anthropic  = TokenUsageAccumulator.current().getAnthropicTokens();
- * </pre>
+ * Tracks input (prompt) and output (completion) tokens separately for each provider.
  *
  * <p>Virtual threads spawned from the request thread inherit the same accumulator
- * reference, so their token counts are aggregated into the same {@link AtomicLong}
- * objects without any locking overhead.
+ * reference, so counts aggregate into the same {@link AtomicLong} objects without
+ * any locking overhead.
  */
 public final class TokenUsageAccumulator {
 
@@ -32,56 +21,51 @@ public final class TokenUsageAccumulator {
                 }
             };
 
-    private final AtomicLong openAiTokens     = new AtomicLong(0);
-    private final AtomicLong anthropicTokens  = new AtomicLong(0);
+    // OpenAI
+    private final AtomicLong openAiInputTokens  = new AtomicLong(0);
+    private final AtomicLong openAiOutputTokens = new AtomicLong(0);
+
+    // Anthropic
+    private final AtomicLong anthropicInputTokens  = new AtomicLong(0);
+    private final AtomicLong anthropicOutputTokens = new AtomicLong(0);
 
     private TokenUsageAccumulator() {}
 
     // ── Lifecycle ────────────────────────────────────────────────────────────
 
-    /**
-     * Creates a fresh accumulator for the current thread and returns it.
-     * Must be paired with a {@link #clear()} call (preferably in a {@code finally} block).
-     */
     public static TokenUsageAccumulator start() {
         TokenUsageAccumulator acc = new TokenUsageAccumulator();
         CONTEXT.set(acc);
         return acc;
     }
 
-    /**
-     * Removes the accumulator from the current thread's context.
-     * Safe to call even if {@link #start()} was never called.
-     */
     public static void clear() {
         CONTEXT.remove();
     }
 
-    /**
-     * Returns the accumulator bound to the current thread, or {@code null}
-     * if {@link #start()} has not been called.
-     */
     public static TokenUsageAccumulator current() {
         return CONTEXT.get();
     }
 
     // ── Accumulation ─────────────────────────────────────────────────────────
 
-    public void addOpenAiTokens(long tokens) {
-        openAiTokens.addAndGet(tokens);
+    public void addOpenAiTokens(long input, long output) {
+        openAiInputTokens.addAndGet(input);
+        openAiOutputTokens.addAndGet(output);
     }
 
-    public void addAnthropicTokens(long tokens) {
-        anthropicTokens.addAndGet(tokens);
+    public void addAnthropicTokens(long input, long output) {
+        anthropicInputTokens.addAndGet(input);
+        anthropicOutputTokens.addAndGet(output);
     }
 
     // ── Read ─────────────────────────────────────────────────────────────────
 
-    public long getOpenAiTokens() {
-        return openAiTokens.get();
-    }
+    public long getOpenAiInputTokens()      { return openAiInputTokens.get(); }
+    public long getOpenAiOutputTokens()     { return openAiOutputTokens.get(); }
+    public long getOpenAiTotalTokens()      { return openAiInputTokens.get() + openAiOutputTokens.get(); }
 
-    public long getAnthropicTokens() {
-        return anthropicTokens.get();
-    }
+    public long getAnthropicInputTokens()   { return anthropicInputTokens.get(); }
+    public long getAnthropicOutputTokens()  { return anthropicOutputTokens.get(); }
+    public long getAnthropicTotalTokens()   { return anthropicInputTokens.get() + anthropicOutputTokens.get(); }
 }

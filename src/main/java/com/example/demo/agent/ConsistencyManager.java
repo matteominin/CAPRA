@@ -32,34 +32,43 @@ public class ConsistencyManager {
     private static final Logger log = LoggerFactory.getLogger(ConsistencyManager.class);
 
                 private static final String SYSTEM_PROMPT = """
-                                                You are a meta-auditor tasked with VERIFYING reports produced by other auditors.
-                                                Your goal is to ELIMINATE false positives and confirm only real issues.
-            
+                                                You are a meta-auditor tasked with VERIFYING and CONSOLIDATING reports produced by other auditors.
+                                                Your goal is to ELIMINATE false positives, confirm only real issues, and MERGE redundant ones.
+                            
                                                 You are provided with:
                                                 1. The FULL TEXT of the original document
                                                 2. A list of reported issues to verify
-            
+                            
                                                 For EACH issue you must:
                                                 1. SEARCH for the quote ("quote" field) in the original document text
                                                 2. Verify that the quote REALLY exists (even with minor formatting variations)
                                                 3. Check that the page number is plausible
-                                                4. Assess whether the report describes a REAL issue or is a false positive
-                                                5. CHECK for DUPLICATE issues: two reports describing the SAME issue from the same or different perspectives. In such cases,
-                                                         set verified=true ONLY for the most complete and detailed version.
-            
+                                                4. Assess whether the report describes a REAL issue or a false positive
+                                                5. CHECK for DUPLICATE or SIMILAR issues that describe the same systemic pattern.
+                                                         Merge them into a SINGLE issue (keep the most complete, discard the rest).
+                            
+                                                GROUPING RULE (MANDATORY):
+                                                If multiple issues describe the SAME pattern on different use cases or requirements
+                                                (e.g., REQ-003 "UC-3 lacks error flow" and REQ-007 "UC-7 lacks error flow"),
+                                                MERGE them: set verified=true for the most complete one (update its description to
+                                                list all affected UCs), set verified=false for all others with
+                                                verificationNote="Merged into [ID]".
+                                                The final report should have the fewest possible issues, each representing
+                                                a distinct class of problem, not individual instances.
+                            
                                                 DECISIONS:
-                                                - verified=true: the quote (or a very similar one) exists in the document AND the issue is real AND it is NOT a duplicate
-                                                - verified=false: the quote does NOT exist, OR the issue is a false positive, OR it is a duplicate of another already confirmed issue
-            
+                                                - verified=true: the quote exists AND the issue is real AND it is NOT a duplicate
+                                                - verified=false: quote missing, false positive, or merged into another issue
+                            
                                                 RULES:
                                                 - If the quote does NOT appear anywhere in the document, set verified=false
                                                 - If the quote is clearly invented or too freely paraphrased, set verified=false
                                                 - If the issue is a false positive (the auditor misunderstood the text), set verified=false
-                                                - If the pageReference is wrong but the issue is real, CORRECT the pageReference and set verified=true
-                                                - If two issues describe the same problem (e.g., "insufficient JaCoCo coverage" reported as both REQ and TST),
-                                                        CONFIRM ONLY ONE (the most complete) and REJECT the other with verificationNote="Duplicate of [ID]"
+                                                - If the pageReference is wrong but the issue is real, CORRECT it and set verified=true
                                                 - ALWAYS explain the reasoning in the verificationNote field
                                                 - When in doubt, be conservative: better a false negative than a false positive
+                                                - CONTEXT: this is a UNIVERSITY project — do not confirm issues that are
+                                                        trivially pedantic or unreasonable for an academic context
                                                 """;
 
     private final ChatClient chatClient;

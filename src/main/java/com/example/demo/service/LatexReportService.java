@@ -78,12 +78,12 @@ public class LatexReportService {
             and generate a structured overview directly in valid LaTeX code.
             
             You must extract and summarize ALL the following sections. DO NOT truncate the output.
-            Generate ONLY the LaTeX body (NO \documentclass, NO \begin{document}).
+            Generate ONLY the LaTeX body (NO \\documentclass, NO \\begin{document}).
             
             OUTPUT FORMAT (pure LaTeX):
-            Use \subsection*{Project Objective} for each heading.
-            Use \begin{itemize} ... \item ... \end{itemize} for lists.
-            Use \texttt{} for technical names and \textbf{} for emphasis.
+            Use \\subsection*{Project Objective} for each heading.
+            Use \\begin{itemize} ... \\item ... \\end{itemize} for lists.
+            Use \\texttt{} for technical names and \\textbf{} for emphasis.
             
             SECTIONS TO GENERATE:
             - Project Objective: what the application does in 2-3 sentences.
@@ -97,10 +97,10 @@ public class LatexReportService {
             - Write in English
             - Be CONCISE: max 2 lines per point, max 1 line per requirement/UC
             - Generate ONLY valid and compilable LaTeX code
-            - Properly escape special characters: & as \&, % as \%, _ as \_
-            - DO NOT generate \documentclass, \begin{document}, \end{document}
+            - Properly escape special characters: & as \\&, % as \\%, _ as \\_
+            - DO NOT generate \\documentclass, \\begin{document}, \\end{document}
             - DO NOT use non-standard packages (only itemize, enumerate, subsection, textbf, texttt)
-            - DO NOT use Unicode characters or special symbols: use only ASCII characters and standard LaTeX commands (e.g., $\in$ instead of ∈)
+            - DO NOT use Unicode characters or special symbols: use only ASCII characters and standard LaTeX commands (e.g., $\\in$ instead of ∈)
             - If a section is not present in the document, write "Not described in the document."
             - COMPLETE ALL SECTIONS: do not stop halfway
             """;
@@ -149,11 +149,11 @@ public class LatexReportService {
                 
             OUTPUT FORMAT (pure LaTeX):
             - Use normal paragraphs separated by blank lines
-            - Use \textbf{} for emphasis and \begin{enumerate} for priority actions
-            - Properly escape: & as \&, % as \%, _ as \_
-            - DO NOT generate \documentclass, \begin{document}, \section
+            - Use \\textbf{} for emphasis and \\begin{enumerate} for priority actions
+            - Properly escape: & as \\&, % as \\%, _ as \\_
+            - DO NOT generate \\documentclass, \\begin{document}, \\section
             - DO NOT use non-standard packages
-            - DO NOT use Unicode characters or special symbols: use only ASCII characters and standard LaTeX commands (e.g., $\in$ instead of ∈)
+            - DO NOT use Unicode characters or special symbols: use only ASCII characters and standard LaTeX commands (e.g., $\\in$ instead of ∈)
             - COMPLETE the entire summary: do not stop halfway
             - Maximum 500 words total
             """;
@@ -236,11 +236,14 @@ public class LatexReportService {
 
     private String callLlmWithFallback(String systemPrompt, String userPrompt) {
         try {
-            String result = reportChatClient.prompt()
+            org.springframework.ai.chat.model.ChatResponse chatResponse = reportChatClient.prompt()
                     .system(systemPrompt)
                     .user(userPrompt)
                     .call()
-                    .content();
+                    .chatResponse();
+            captureTokens(chatResponse, true);
+            String result = chatResponse != null && chatResponse.getResult() != null
+                    ? chatResponse.getResult().getOutput().getText() : null;
             if (result != null && !result.isBlank()) {
                 return result;
             }
@@ -249,12 +252,49 @@ public class LatexReportService {
             log.warn("Anthropic fallito ({}), provo con OpenAI...", e.getMessage());
         }
 
-        String result = analysisChatClient.prompt()
+        org.springframework.ai.chat.model.ChatResponse chatResponse = analysisChatClient.prompt()
                 .system(systemPrompt)
                 .user(userPrompt)
                 .call()
-                .content();
+                .chatResponse();
+        captureTokens(chatResponse, false);
+        String result = chatResponse != null && chatResponse.getResult() != null
+                ? chatResponse.getResult().getOutput().getText() : null;
         return result != null ? result : "";
+    }
+
+    /**
+     * Accumulates token usage from a ChatResponse into the per-request
+     * {@link TokenUsageAccumulator} (if one is active for the current thread).
+     *
+     * @param chatResponse the response to extract usage from
+     * @param isAnthropic  {@code true} → counts toward Anthropic, {@code false} → OpenAI
+     */
+    private void captureTokens(org.springframework.ai.chat.model.ChatResponse chatResponse,
+                                boolean isAnthropic) {
+        if (chatResponse == null) return;
+        try {
+            var metadata = chatResponse.getMetadata();
+            if (metadata == null) return;
+            var usage = metadata.getUsage();
+            if (usage == null) return;
+            long input  = usage.getPromptTokens()     != null ? usage.getPromptTokens().longValue()     : 0L;
+            long output = usage.getCompletionTokens() != null ? usage.getCompletionTokens().longValue() : 0L;
+            if (input == 0 && output == 0) return;
+            TokenUsageAccumulator acc = TokenUsageAccumulator.current();
+            if (acc == null) return;
+            if (isAnthropic) {
+                acc.addAnthropicTokens(input, output);
+                log.debug("LatexReportService: +{} in / +{} out Anthropic tokens (model={})",
+                        input, output, metadata.getModel());
+            } else {
+                acc.addOpenAiTokens(input, output);
+                log.debug("LatexReportService: +{} in / +{} out OpenAI tokens (fallback, model={})",
+                        input, output, metadata.getModel());
+            }
+        } catch (Exception e) {
+            log.debug("LatexReportService: failed to capture token usage — {}", e.getMessage());
+        }
     }
 
     // ═══════════════════════════════════════════════════
@@ -267,47 +307,47 @@ public class LatexReportService {
 
         // Preambolo
         sb.append("""
-                \\documentclass[11pt,a4paper]{scrartcl}
-                \\usepackage[utf8]{inputenc}
-                \\usepackage[T1]{fontenc}
-                \\usepackage[italian]{babel}
-                \\usepackage{xcolor}
-                \\usepackage{hyperref}
-                \\usepackage{enumitem}
-                \\usepackage{booktabs}
-                \\usepackage{geometry}
-                \\usepackage{fancyhdr}
-                \\usepackage{longtable}
-                \\usepackage{array}
-                \\usepackage{amssymb}
-                \\geometry{a4paper, margin=2.5cm}
+            \\documentclass[11pt,a4paper]{scrartcl}
+            \\usepackage[utf8]{inputenc}
+            \\usepackage[T1]{fontenc}
+            \\usepackage[italian]{babel}
+            \\usepackage{xcolor}
+            \\usepackage{hyperref}
+            \\usepackage{enumitem}
+            \\usepackage{booktabs}
+            \\usepackage{geometry}
+            \\usepackage{fancyhdr}
+            \\usepackage{longtable}
+            \\usepackage{array}
+            \\usepackage{amssymb}
+            \\geometry{a4paper, margin=2.5cm}
                 
-                \\definecolor{highcolor}{RGB}{180,0,0}
-                \\definecolor{medcolor}{RGB}{180,100,0}
-                \\definecolor{lowcolor}{RGB}{80,80,80}
-                \\definecolor{present}{RGB}{0,120,0}
-                \\definecolor{partial}{RGB}{180,140,0}
-                \\definecolor{absent}{RGB}{180,0,0}
-                \\definecolor{scoreA}{RGB}{0,130,0}
-                \\definecolor{scoreB}{RGB}{80,160,0}
-                \\definecolor{scoreC}{RGB}{180,140,0}
-                \\definecolor{scoreD}{RGB}{200,80,0}
-                \\definecolor{scoreF}{RGB}{180,0,0}
+            \\definecolor{highcolor}{RGB}{180,0,0}
+            \\definecolor{medcolor}{RGB}{180,100,0}
+            \\definecolor{lowcolor}{RGB}{80,80,80}
+            \\definecolor{present}{RGB}{0,120,0}
+            \\definecolor{partial}{RGB}{180,140,0}
+            \\definecolor{absent}{RGB}{180,0,0}
+            \\definecolor{scoreA}{RGB}{0,130,0}
+            \\definecolor{scoreB}{RGB}{80,160,0}
+            \\definecolor{scoreC}{RGB}{180,140,0}
+            \\definecolor{scoreD}{RGB}{200,80,0}
+            \\definecolor{scoreF}{RGB}{180,0,0}
                 
-                \\pagestyle{fancy}
-                \\fancyhf{}
-                \\fancyhead[L]{\\small SWE-Audit-Agent}
-                \\fancyhead[R]{\\small \\today}
-                \\fancyfoot[C]{\\thepage}
+            \\pagestyle{fancy}
+            \\fancyhf{}
+            \\fancyhead[L]{\\small SWE-Audit-Agent}
+            \\fancyhead[R]{\\small \\today}
+            \\fancyfoot[C]{\\thepage}
                 
-                \\title{Report di Audit Ingegneristico\\\\[0.3em]\\large %s}
-                \\author{SWE-Audit-Agent}
-                \\date{\\today}
-                \\begin{document}
-                \\maketitle
-                \\tableofcontents
-                \\newpage
-                """.formatted(escapeLatex(report.documentName())));
+            \\title{Report di Audit Ingegneristico\\\\[0.3em]\\large %s}
+            \\author{SWE-Audit-Agent}
+            \\date{\\today}
+            \\begin{document}
+            \\maketitle
+            \\tableofcontents
+            \\newpage
+            """.formatted(escapeLatex(report.documentName())));
 
         // ── 1. Contesto del Documento ──
         sb.append("\\section{Contesto del Documento}\n");
