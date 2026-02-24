@@ -106,8 +106,8 @@ public class LatexReportService {
             """;
 
         try {
-            String context = callLlmWithFallback(contextPrompt,
-                    "Ecco il testo del documento:\n\n" + truncateForPrompt(fullText, 80000));
+                String context = callLlmWithFallback(contextPrompt,
+                    "Ecco il testo del documento:\n\n" + fullText);
             log.debug("Contesto documento generato ({} caratteri)", context.length());
             return context;
         } catch (Exception e) {
@@ -224,7 +224,7 @@ public class LatexReportService {
                 report.issues().stream()
                         .map(i -> i.category() != null ? i.category() : "Altro")
                         .distinct().collect(Collectors.joining(", ")),
-                truncateForPrompt(fullText, 30000));
+                        fullText);
 
         try {
             return callLlmWithFallback(systemPrompt, userPrompt);
@@ -950,11 +950,6 @@ public class LatexReportService {
     // Utility
     // ═══════════════════════════════════════════════════
 
-    private String truncateForPrompt(String text, int maxChars) {
-        if (text.length() <= maxChars) return text;
-        log.warn("Text truncated from {} to {} characters for the prompt", text.length(), maxChars);
-        return text.substring(0, maxChars) + "\n\n[... testo troncato per limiti di contesto ...]";
-    }
 
     /**
      * Escapes LaTeX special characters for text INSIDE commands (\textit, \textbf, etc.).
