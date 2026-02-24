@@ -103,16 +103,18 @@ public class LatexReportService {
             - DO NOT use Unicode characters or special symbols: use only ASCII characters and standard LaTeX commands (e.g., $\\in$ instead of ∈)
             - If a section is not present in the document, write "Not described in the document."
             - COMPLETE ALL SECTIONS: do not stop halfway
+            - Write the output in ENGLISH. Do NOT translate document-specific names, use case identifiers,
+              class names, or any term exactly as it appears in the analyzed document.
             """;
 
         try {
                 String context = callLlmWithFallback(contextPrompt,
-                    "Ecco il testo del documento:\n\n" + fullText);
-            log.debug("Contesto documento generato ({} caratteri)", context.length());
+                    "Here is the document text:\n\n" + fullText);
+            log.debug("Document context generated ({} characters)", context.length());
             return context;
         } catch (Exception e) {
-            log.warn("Impossibile generare contesto documento: {}", e.getMessage());
-            return "Il contesto del documento non e' disponibile a causa di un errore nella generazione automatica.";
+            log.warn("Unable to generate document context: {}", e.getMessage());
+            return "The document context is not available due to an error in automatic generation.";
         }
     }
 
@@ -189,48 +191,51 @@ public class LatexReportService {
      */
     private String generateStrengths(AuditReport report, String fullText) {
         String systemPrompt = """
-                Sei un esperto di Ingegneria del Software. Analizza un documento di progetto SWE
-                e identifica i PUNTI DI FORZA del lavoro dello studente.
+                You are a Software Engineering expert. Analyze a SWE project document (thesis/report)
+                and identify the STRENGTHS of the student's work.
                 
-                Genera l'output direttamente in codice LaTeX valido. Scrivi in ITALIANO.
+                Generate the output directly as valid LaTeX code. Write in ENGLISH.
+                Do NOT translate document-specific names, use case identifiers, or technical terms
+                as they appear in the document.
                 
-                Identifica 3-6 aspetti positivi del documento, ad esempio:
-                - Struttura chiara e ben organizzata
-                - Buona copertura dei casi d'uso
-                - Testing approfondito
-                - Documentazione dei requisiti completa
-                - Architettura ben definita
-                - Uso corretto di pattern di design
+                Identify 3-6 positive aspects of the document, for example:
+                - Clear and well-organized structure
+                - Good use case coverage
+                - Thorough testing
+                - Complete requirements documentation
+                - Well-defined architecture
+                - Correct use of design patterns
                 
-                FORMATO OUTPUT (LaTeX puro):
-                Genera una \\begin{itemize} con un \\item per ogni punto di forza.
-                Usa \\textbf{} per il titolo del punto e testo normale per la spiegazione.
-                Escappa correttamente: & come \\&, % come \\%, _ come \\_
-                NON generare \\documentclass, \\begin{document}, \\section.
+                OUTPUT FORMAT (pure LaTeX):
+                Generate a \\begin{itemize} with one \\item per strength.
+                Use \\textbf{} for the title and normal text for the explanation.
+                Escape correctly: & as \\&, % as \\%, _ as \\_
+                DO NOT generate \\documentclass, \\begin{document}, \\section.
                 
-                REGOLE:
-                - Ogni punto di forza deve essere specifico e basato su EVIDENZE nel testo
-                - NON inventare punti di forza se non ci sono
-                - Massimo 200 parole totali
+                RULES:
+                - Each strength must be specific and based on EVIDENCE in the text
+                - DO NOT invent strengths that are not supported by the document
+                - Maximum 200 words total
                 """;
 
         String userPrompt = """
-                Identifica i punti di forza di questo documento SWE.
-                Il documento ha %d problemi identificati nelle categorie: %s.
+                Identify the strengths of this SWE document.
+                The document has %d identified issues in the following categories: %s.
+                Write the output in ENGLISH.
                 
-                DOCUMENTO (estratto):
+                DOCUMENT (excerpt):
                 %s""".formatted(
                 report.totalIssues(),
                 report.issues().stream()
                         .map(i -> i.category() != null ? i.category() : "Altro")
                         .distinct().collect(Collectors.joining(", ")),
-                        fullText);
+                truncateForPrompt(fullText, 30000));
 
         try {
             return callLlmWithFallback(systemPrompt, userPrompt);
         } catch (Exception e) {
-            log.warn("Impossibile generare punti di forza: {}", e.getMessage());
-            return "L'analisi dei punti di forza non e' disponibile.";
+            log.warn("Unable to generate strengths section: {}", e.getMessage());
+            return "The strengths analysis is not available due to an error in automatic generation.";
         }
     }
 
@@ -310,7 +315,8 @@ public class LatexReportService {
             \\documentclass[11pt,a4paper]{scrartcl}
             \\usepackage[utf8]{inputenc}
             \\usepackage[T1]{fontenc}
-            \\usepackage[italian]{babel}
+            \\usepackage[english]{babel}
+            \\usepackage{ragged2e}
             \\usepackage{xcolor}
             \\usepackage{hyperref}
             \\usepackage{enumitem}
@@ -321,6 +327,7 @@ public class LatexReportService {
             \\usepackage{array}
             \\usepackage{amssymb}
             \\geometry{a4paper, margin=2.5cm}
+            \\setlength{\\emergencystretch}{3em}
                 
             \\definecolor{highcolor}{RGB}{180,0,0}
             \\definecolor{medcolor}{RGB}{180,100,0}
@@ -336,12 +343,12 @@ public class LatexReportService {
                 
             \\pagestyle{fancy}
             \\fancyhf{}
-            \\fancyhead[L]{\\small SWE-Audit-Agent}
+            \\fancyhead[L]{\\small CAPRA}
             \\fancyhead[R]{\\small \\today}
             \\fancyfoot[C]{\\thepage}
                 
-            \\title{Report di Audit Ingegneristico\\\\[0.3em]\\large %s}
-            \\author{SWE-Audit-Agent}
+            \\title{Software Engineering Audit Report\\\\[0.3em]\\large %s}
+            \\author{CAPRA}
             \\date{\\today}
             \\begin{document}
             \\maketitle
@@ -349,55 +356,55 @@ public class LatexReportService {
             \\newpage
             """.formatted(escapeLatex(report.documentName())));
 
-        // ── 1. Contesto del Documento ──
-        sb.append("\\section{Contesto del Documento}\n");
+        // ── 1. Document Context ──
+        sb.append("\\section{Document Context}\n");
         sb.append("\\begin{small}\n");
         sb.append(sanitizeLlmLatex(documentContext));
         sb.append("\n\\end{small}\n\n");
 
-        // ── 2. Sintesi Esecutiva ──
-        sb.append("\\section{Sintesi Esecutiva}\n");
+        // ── 2. Executive Summary ──
+        sb.append("\\section{Executive Summary}\n");
         sb.append(formatSynthesisSection(summary, report));
         sb.append("\n\n");
 
-        // ── 3. Punti di Forza ──
-        sb.append("\\section{Punti di Forza}\n");
+        // ── 3. Strengths ──
+        sb.append("\\section{Strengths}\n");
         sb.append("\\begin{small}\n");
         sb.append(sanitizeLlmLatex(strengths));
         sb.append("\n\\end{small}\n\n");
 
-        // ── 5. Copertura Feature (da MongoDB) ──
+        // ── 5. Feature Coverage (da MongoDB) ──
         if (!report.featureCoverage().isEmpty()) {
-            sb.append("\\section{Copertura Feature Attese}\n");
+            sb.append("\\section{Expected Feature Coverage}\n");
             sb.append(buildFeatureCoverageSection(report.featureCoverage()));
         }
 
-        // ── 6. Tabella Riassuntiva ──
-        sb.append("\\section{Tabella Riassuntiva}\n");
+        // ── 6. Summary Table ──
+        sb.append("\\section{Summary Table}\n");
         sb.append(buildSummaryTable(report));
         sb.append("\n");
 
-        // ── 7. Dettaglio per Categoria (raggruppato per UC) ──
-        sb.append("\\section{Dettaglio delle Problematiche}\n");
+        // ── 7. Detailed Issues ──
+        sb.append("\\section{Issue Details}\n");
         if (report.issues().isEmpty()) {
-            sb.append("Nessun problema rilevato durante l'audit.\n\n");
+            sb.append("No issues found during the audit.\n\n");
         } else {
             buildDetailByCategoryAndUC(sb, report);
         }
 
-        // ── 8. Raccomandazioni Prioritarie ──
-        sb.append("\\section{Raccomandazioni Prioritarie}\n");
+        // ── 8. Priority Recommendations ──
+        sb.append("\\section{Priority Recommendations}\n");
         sb.append(buildPriorityRecommendations(report));
 
-        // ── 9. Matrice di Tracciabilità ──
+        // ── 9. Traceability Matrix ──
         if (report.traceabilityMatrix() != null && !report.traceabilityMatrix().isEmpty()) {
-            sb.append("\\section{Matrice di Tracciabilit\\`a}\n");
+            sb.append("\\section{Traceability Matrix}\n");
             sb.append(buildTraceabilityMatrix(report.traceabilityMatrix()));
         }
 
-        // ── 10. Coerenza Terminologica ──
+        // ── 10. Glossary Issues ──
         if (report.glossaryIssues() != null && !report.glossaryIssues().isEmpty()) {
-            sb.append("\\section{Coerenza Terminologica}\n");
+            sb.append("\\section{Terminological Consistency}\n");
             sb.append(buildGlossaryIssuesSection(report.glossaryIssues()));
         }
 
@@ -414,19 +421,19 @@ public class LatexReportService {
     @SuppressWarnings("unused")
     private String buildScorecard(AuditReport report) {
         if (report.issues().isEmpty()) {
-            return "Nessun problema rilevato: valutazione complessiva eccellente.\n\n";
+            return "No issues detected: overall assessment excellent.\n\n";
         }
 
         Map<String, List<AuditIssue>> byCategory = report.issues().stream()
                 .collect(Collectors.groupingBy(
-                        i -> i.category() != null ? i.category() : "Altro",
+                        i -> i.category() != null ? i.category() : "Other",
                         LinkedHashMap::new, Collectors.toList()));
 
         var sb = new StringBuilder();
         sb.append("\\begin{center}\n");
         sb.append("\\begin{tabular}{l c c c c c}\n");
         sb.append("\\toprule\n");
-        sb.append("\\textbf{Area} & \\textbf{HIGH} & \\textbf{MEDIUM} & \\textbf{LOW} & \\textbf{Punteggio} & \\textbf{Voto} \\\\\n");
+        sb.append("\\textbf{Area} & \\textbf{HIGH} & \\textbf{MEDIUM} & \\textbf{LOW} & \\textbf{Score} & \\textbf{Grade} \\\\\n");
         sb.append("\\midrule\n");
 
         int totalScore = 0;
@@ -452,7 +459,7 @@ public class LatexReportService {
         String avgColor = scoreToColor(avgScore);
 
         sb.append("\\midrule\n");
-        sb.append("\\textbf{Media Complessiva} & & & & \\textbf{%d/100} & \\textcolor{%s}{\\textbf{%s}} \\\\\n"
+        sb.append("\\textbf{Overall Average} & & & & \\textbf{%d/100} & \\textcolor{%s}{\\textbf{%s}} \\\\\n"
                 .formatted(avgScore, avgColor, avgGrade));
         sb.append("\\bottomrule\n");
         sb.append("\\end{tabular}\n");
@@ -489,22 +496,22 @@ public class LatexReportService {
         long absent = features.stream().filter(f -> f.status() == FeatureCoverage.FeatureStatus.ABSENT).count();
         int avgCoverage = (int) features.stream().mapToInt(FeatureCoverage::coverageScore).average().orElse(0);
 
-        sb.append("Su %d feature attese: \\textcolor{present}{%d presenti}, \\textcolor{partial}{%d parziali}, \\textcolor{absent}{%d assenti}. "
+        sb.append("Of %d expected features: \\textcolor{present}{%d present}, \\textcolor{partial}{%d partial}, \\textcolor{absent}{%d absent}. "
                 .formatted(features.size(), present, partial, absent));
-        sb.append("Copertura media: \\textbf{%d\\%%}.\n\n".formatted(avgCoverage));
+        sb.append("Average coverage: \\textbf{%d\\%%}.\n\n".formatted(avgCoverage));
 
         // Detailed table
-        sb.append("\\begin{longtable}{p{5cm} c c p{6cm}}\n");
+        sb.append("\\begin{longtable}{>{\\RaggedRight\\arraybackslash\\hspace{0pt}}p{5cm} c c >{\\RaggedRight\\arraybackslash\\hspace{0pt}}p{6cm}}\n");
         sb.append("\\toprule\n");
-        sb.append("\\textbf{Feature} & \\textbf{Stato} & \\textbf{Copertura} & \\textbf{Evidenza} \\\\\n");
+        sb.append("\\textbf{Feature} & \\textbf{Status} & \\textbf{Coverage} & \\textbf{Evidence} \\\\\n");
         sb.append("\\midrule\n");
         sb.append("\\endhead\n");
 
         for (FeatureCoverage f : features) {
             String statusLabel = switch (f.status()) {
-                case PRESENT -> "\\textcolor{present}{Presente}";
-                case PARTIAL -> "\\textcolor{partial}{Parziale}";
-                case ABSENT -> "\\textcolor{absent}{Assente}";
+                case PRESENT -> "\\textcolor{present}{Present}";
+                case PARTIAL -> "\\textcolor{partial}{Partial}";
+                case ABSENT -> "\\textcolor{absent}{Absent}";
             };
 
             String coverageLabel = "%d\\%% (%d/%d)".formatted(f.coverageScore(), f.matchedItems(), f.totalItems());
@@ -527,12 +534,12 @@ public class LatexReportService {
      */
     private String buildSummaryTable(AuditReport report) {
         if (report.issues().isEmpty()) {
-            return "Nessun problema rilevato.\n";
+            return "No issues found.\n";
         }
 
         Map<String, Map<Severity, Long>> matrix = report.issues().stream()
                 .collect(Collectors.groupingBy(
-                        i -> i.category() != null ? i.category() : "Altro",
+                        i -> i.category() != null ? i.category() : "Other",
                         LinkedHashMap::new,
                         Collectors.groupingBy(AuditIssue::severity, Collectors.counting())));
 
@@ -540,9 +547,9 @@ public class LatexReportService {
         sb.append("\\begin{center}\n");
         sb.append("\\begin{tabular}{l c c c c}\n");
         sb.append("\\toprule\n");
-        sb.append("\\textbf{Categoria} & \\textcolor{highcolor}{\\textbf{HIGH}} & " +
+        sb.append("\\textbf{Category} & \\textcolor{highcolor}{\\textbf{HIGH}} & " +
                 "\\textcolor{medcolor}{\\textbf{MEDIUM}} & \\textcolor{lowcolor}{\\textbf{LOW}} & " +
-                "\\textbf{Totale} \\\\\n");
+                "\\textbf{Total} \\\\\n");
         sb.append("\\midrule\n");
 
         for (var entry : matrix.entrySet()) {
@@ -555,7 +562,7 @@ public class LatexReportService {
         }
 
         sb.append("\\midrule\n");
-        sb.append("\\textbf{Totale} & \\textbf{%d} & \\textbf{%d} & \\textbf{%d} & \\textbf{%d} \\\\\n".formatted(
+        sb.append("\\textbf{Total} & \\textbf{%d} & \\textbf{%d} & \\textbf{%d} & \\textbf{%d} \\\\\n".formatted(
                 report.severityDistribution().getOrDefault(Severity.HIGH, 0L),
                 report.severityDistribution().getOrDefault(Severity.MEDIUM, 0L),
                 report.severityDistribution().getOrDefault(Severity.LOW, 0L),
@@ -585,7 +592,7 @@ public class LatexReportService {
             String category = entry.getKey();
             List<AuditIssue> categoryIssues = entry.getValue();
 
-            sb.append("\\subsection{%s (%d problemi)}\n".formatted(
+            sb.append("\\subsection{%s (%d issues)}\n".formatted(
                     escapeLatex(category), categoryIssues.size()));
 
             // Group by UC within category
@@ -612,7 +619,7 @@ public class LatexReportService {
             // Render ungrouped
             if (!noUC.isEmpty()) {
                 if (!byUC.isEmpty()) {
-                    sb.append("\\subsubsection*{Problemi Generali}\n");
+                    sb.append("\\subsubsection*{General Issues}\n");
                 }
                 for (AuditIssue issue : noUC) {
                     sb.append(buildIssueBlock(issue, crossRefs));
@@ -693,7 +700,7 @@ public class LatexReportService {
         String confBadge = "\\textcolor{%s}{[%d\\%%]}".formatted(confColor, confPct);
 
         var sb = new StringBuilder();
-        sb.append("\\paragraph{%s \\textnormal{--- %s %s --- Pagina %d}}\n".formatted(
+        sb.append("\\paragraph{%s \\textnormal{--- %s %s --- Page %d}}\n".formatted(
                 escapeLatex(issue.id()), severityLabel, confBadge, issue.pageReference()));
 
         sb.append("%s\n\n".formatted(escapeLatex(issue.description())));
@@ -703,14 +710,14 @@ public class LatexReportService {
         sb.append("\\end{quote}\n\n");
 
         if (issue.recommendation() != null && !issue.recommendation().isBlank()) {
-            sb.append("\\textbf{Raccomandazione:} %s\n\n".formatted(
+            sb.append("\\textbf{Recommendation:} %s\n\n".formatted(
                     escapeLatex(issue.recommendation())));
         }
 
         // Cross-references
         List<String> refs = crossRefs.get(issue.id());
         if (refs != null && !refs.isEmpty()) {
-            sb.append("{\\small\\textit{Vedi anche: %s}}\n\n".formatted(
+            sb.append("{\\small\\textit{See also: %s}}\n\n".formatted(
                     refs.stream().map(this::escapeLatex).collect(Collectors.joining(", "))));
         }
 
@@ -726,12 +733,12 @@ public class LatexReportService {
                 .toList();
 
         if (highIssues.isEmpty()) {
-            return "Non sono stati rilevati problemi ad alta severita. " +
-                    "Si consiglia comunque di revisionare le segnalazioni di severita MEDIUM.\n\n";
+            return "No high-severity issues were found. " +
+                    "Review the MEDIUM severity findings for further improvements.\n\n";
         }
 
         var sb = new StringBuilder();
-        sb.append("Le seguenti azioni sono considerate prioritarie:\n\n");
+        sb.append("The following actions are considered priority:\n\n");
         sb.append("\\begin{enumerate}\n");
 
         for (AuditIssue issue : highIssues) {
@@ -739,7 +746,7 @@ public class LatexReportService {
             String rec = issue.recommendation() != null && !issue.recommendation().isBlank()
                     ? truncateRecommendation(issue.recommendation(), 150)
                     : truncateRecommendation(issue.description(), 150);
-            sb.append("  \\item \\textbf{%s} (pag.~%d): %s\n".formatted(
+            sb.append("  \\item \\textbf{%s} (p.~%d): %s\n".formatted(
                     escapeLatex(issue.id()), issue.pageReference(), escapeLatex(rec)));
         }
 
@@ -820,13 +827,13 @@ public class LatexReportService {
     private boolean isSectionHeader(String line) {
         // Common headers from the LLM context prompt
         String upper = line.toUpperCase();
-        return upper.startsWith("OBIETTIVO DEL PROGETTO") ||
-               upper.startsWith("CASI D'USO") || upper.startsWith("CASI D USO") ||
-               upper.startsWith("REQUISITI FUNZIONALI") ||
-               upper.startsWith("REQUISITI NON FUNZIONALI") ||
-               upper.startsWith("ARCHITETTURA") ||
-               upper.startsWith("STRATEGIA DI TESTING") ||
-               upper.startsWith("TECNOLOGIE") ||
+        return upper.startsWith("OBJECTIVE OF THE PROJECT") ||
+               upper.startsWith("USE CASES") || upper.startsWith("USE CASES") ||
+               upper.startsWith("FUNCTIONAL REQUIREMENTS") ||
+               upper.startsWith("NON-FUNCTIONAL REQUIREMENTS") ||
+               upper.startsWith("ARCHITECTURE") ||
+               upper.startsWith("TESTING STRATEGY") ||
+               upper.startsWith("TECHNOLOGIES") ||
                (line.endsWith(":") && line.length() < 60 && !line.contains(".") && !line.startsWith("-"));
     }
 
@@ -843,8 +850,8 @@ public class LatexReportService {
         long low = report.severityDistribution().getOrDefault(Severity.LOW, 0L);
 
         sb.append("\\noindent\\fbox{\\parbox{\\dimexpr\\textwidth-2\\fboxsep-2\\fboxrule}{%\n");
-        sb.append("\\centering\\textbf{Panoramica Rapida} \\\\[0.3em]\n");
-        sb.append("Problemi totali: \\textbf{%d} \\quad --- \\quad ".formatted(report.totalIssues()));
+        sb.append("\\centering\\textbf{Quick Overview} \\\\[0.3em]\n");
+        sb.append("Total issues: \\textbf{%d} \\quad --- \\quad ".formatted(report.totalIssues()));
         sb.append("\\textcolor{highcolor}{HIGH: \\textbf{%d}} \\quad ".formatted(high));
         sb.append("\\textcolor{medcolor}{MEDIUM: \\textbf{%d}} \\quad ".formatted(med));
         sb.append("\\textcolor{lowcolor}{LOW: \\textbf{%d}}\n".formatted(low));
@@ -853,7 +860,7 @@ public class LatexReportService {
         if (!report.issues().isEmpty()) {
             double avgConf = report.issues().stream()
                     .mapToDouble(AuditIssue::confidenceScore).average().orElse(0.0);
-            sb.append("\\\\[0.2em] Confidence media: \\textbf{%d\\%%}\n".formatted(
+            sb.append("\\\\[0.2em] Average confidence: \\textbf{%d\\%%}\n".formatted(
                     (int) Math.round(avgConf * 100)));
         }
         sb.append("}}\n\\vspace{0.5em}\n\n");
@@ -876,13 +883,13 @@ public class LatexReportService {
         long missingDesign = entries.stream().filter(e -> !e.hasDesign()).count();
         long missingTest = entries.stream().filter(e -> !e.hasTest()).count();
 
-        sb.append("Su %d casi d'uso tracciati: \\textcolor{present}{%d completamente coperti}, ".formatted(
+        sb.append("Of %d traced use cases: \\textcolor{present}{%d fully covered}, ".formatted(
                 entries.size(), fullyCovered));
-        sb.append("\\textcolor{absent}{%d senza design, %d senza test}.\n\n".formatted(missingDesign, missingTest));
+        sb.append("\\textcolor{absent}{%d without design, %d without test}.\n\n".formatted(missingDesign, missingTest));
 
-        sb.append("\\begin{longtable}{l l c c p{5.5cm}}\n");
+        sb.append("\\begin{longtable}{p{1.8cm} >{\\RaggedRight\\arraybackslash\\hspace{0pt}}p{4.5cm} c c >{\\RaggedRight\\arraybackslash\\hspace{0pt}}p{5cm}}\n");
         sb.append("\\toprule\n");
-        sb.append("\\textbf{ID} & \\textbf{Caso d'Uso} & \\textbf{Design} & \\textbf{Test} & \\textbf{Gap} \\\\\n");
+        sb.append("\\textbf{ID} & \\textbf{Use Case} & \\textbf{Design} & \\textbf{Test} & \\textbf{Gap} \\\\\n");
         sb.append("\\midrule\n");
         sb.append("\\endhead\n");
 
@@ -899,7 +906,7 @@ public class LatexReportService {
 
             sb.append("%s & %s & %s & %s & {\\small %s} \\\\\n".formatted(
                     escapeLatex(e.useCaseId()),
-                    escapeLatex(truncateRecommendation(e.useCaseName(), 35)),
+                    escapeLatex(e.useCaseName()),
                     designMark,
                     testMark,
                     gapText));
@@ -919,12 +926,12 @@ public class LatexReportService {
 
         long major = issues.stream().filter(g -> "MAJOR".equalsIgnoreCase(g.severity())).count();
         long minor = issues.size() - major;
-        sb.append("Rilevate \\textbf{%d} incoerenze terminologiche (%d maggiori, %d minori).\n\n"
+        sb.append("Found \\textbf{%d} terminological inconsistencies (%d major, %d minor).\n\n"
                 .formatted(issues.size(), major, minor));
 
-        sb.append("\\begin{longtable}{p{3cm} p{4cm} c p{5cm}}\n");
+        sb.append("\\begin{longtable}{>{\\RaggedRight\\arraybackslash\\hspace{0pt}}p{3cm} >{\\RaggedRight\\arraybackslash\\hspace{0pt}}p{4cm} c >{\\RaggedRight\\arraybackslash\\hspace{0pt}}p{5cm}}\n");
         sb.append("\\toprule\n");
-        sb.append("\\textbf{Gruppo} & \\textbf{Varianti trovate} & \\textbf{Severit\\`a} & \\textbf{Suggerimento} \\\\\n");
+        sb.append("\\textbf{Group} & \\textbf{Variants found} & \\textbf{Severity} & \\textbf{Suggestion} \\\\\n");
         sb.append("\\midrule\n");
         sb.append("\\endhead\n");
 
@@ -950,6 +957,11 @@ public class LatexReportService {
     // Utility
     // ═══════════════════════════════════════════════════
 
+    private String truncateForPrompt(String text, int maxChars) {
+        if (text.length() <= maxChars) return text;
+        log.warn("Text truncated from {} to {} characters for the prompt", text.length(), maxChars);
+        return text.substring(0, maxChars) + "\n\n[... text truncated ...]";
+    }
 
     /**
      * Escapes LaTeX special characters for text INSIDE commands (\textit, \textbf, etc.).

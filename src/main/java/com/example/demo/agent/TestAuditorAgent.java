@@ -107,12 +107,14 @@ public class TestAuditorAgent {
             IssuesResponse response = ResilientLlmCaller.callEntity(
                     chatClient, SYSTEM_PROMPT,
                     """
-                            Analizza il seguente documento di Ingegneria del Software.
-                            Concentrati sulla copertura dei test, la coerenza tra design e implementazione,
-                            e la tracciabilità tra requisiti e test case.
-                            Per ogni problema, fornisci una citazione testuale esatta dal documento.
+                            Analyze the following Software Engineering document.
+                            Focus on test coverage, consistency between design and implementation,
+                            and traceability between requirements and test cases.
+                            For each problem, provide an exact verbatim quote from the document.
+                            Write all output in ENGLISH. Do NOT translate document-specific identifiers,
+                            use case names, class names, or any term exactly as it appears in the document.
                             
-                            DOCUMENTO:
+                            DOCUMENT:
                             ---
                             %s
                             ---

@@ -43,7 +43,8 @@ public class FeatureCheckAgent {
             - totalItems = total number of items in the checklist
             - evidence = one or two sentences explaining what you found (or what is missing). NO LaTeX commands.
             - DO NOT invent evidence. If you don't find something, state it clearly.
-            - Write everything in ITALIAN
+            - Write everything in ENGLISH. Do NOT translate document-specific feature names, use case
+              identifiers, class names, or any term exactly as it appears in the analyzed document.
             """;
 
     private final ChatClient chatClient;
@@ -78,7 +79,7 @@ public class FeatureCheckAgent {
                             ? f.checklist().stream()
                                 .map(item -> "    - " + item)
                                 .collect(Collectors.joining("\n"))
-                            : "    (nessuna checklist)";
+                            : "    (no checklist)";
                     return "FEATURE: %s\nDescrizione: %s\nChecklist:\n%s".formatted(
                             f.feature(), f.description(), checklist);
                 })
@@ -88,20 +89,22 @@ public class FeatureCheckAgent {
             FeatureCoverageResponse response = ResilientLlmCaller.callEntity(
                     chatClient, SYSTEM_PROMPT,
                     """
-                            Analizza il seguente documento e verifica la presenza di ciascuna feature.
+                            Analyze the following document and verify the presence of each feature.
+                            Write all output in ENGLISH. Do NOT translate document-specific feature names,
+                            use case identifiers, or any term exactly as it appears in the document.
                             
-                            DOCUMENTO:
+                            DOCUMENT:
                             ===BEGIN===
                             %s
                             ===END===
                             
-                            FEATURE DA VERIFICARE:
+                            FEATURES TO VERIFY:
                             %s
                             
-                            Per ogni feature, restituisci featureName (esattamente come fornito),
-                            status, coverageScore, evidence, matchedItems e totalItems.
-                            Per il campo "category" usa una di: Requisiti, Architettura, Testing, Design, Documentazione.
-                            """.formatted(truncate(documentText, 80000), featuresDescription),
+                            For each feature, return featureName (exactly as provided),
+                            status, coverageScore, evidence, matchedItems and totalItems.
+                            For the "category" field use one of: Requirements, Architecture, Testing, Design, Documentation.
+                            """.formatted(documentText, featuresDescription),
                     FeatureCoverageResponse.class, "FeatureCheckAgent");
 
             if (response != null && response.features() != null) {
@@ -128,6 +131,6 @@ public class FeatureCheckAgent {
 
     private String truncate(String text, int maxChars) {
         if (text.length() <= maxChars) return text;
-        return text.substring(0, maxChars) + "\n[... troncato ...]";
+        return text.substring(0, maxChars) + "\n[... truncated ...]";
     }
 }

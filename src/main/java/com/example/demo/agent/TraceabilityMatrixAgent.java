@@ -46,7 +46,8 @@ public class TraceabilityMatrixAgent {
                         - testRef: briefly describe WHICH test covers it (e.g., "testReservation_Success, testReservation_InvalidDate")
                             If not found, write "No test found"
                         - gap: describe in 1 sentence the main gap. If all covered, EMPTY string "".
-                        - Write in ITALIAN
+                        - Write in ENGLISH. Do NOT translate document-specific use case names,
+                          identifiers, class names, or any term exactly as it appears in the document.
                         - DO NOT invent Use Cases that do not exist in the document
                         """;
 
@@ -69,14 +70,16 @@ public class TraceabilityMatrixAgent {
             TraceabilityMatrixResponse response = ResilientLlmCaller.callEntity(
                     chatClient, SYSTEM_PROMPT,
                     """
-                            Analizza il seguente documento di Ingegneria del Software e costruisci
-                            la matrice di tracciabilita completa UC/Requisiti -> Design -> Test.
+                            Analyze the following Software Engineering document and build
+                            a complete traceability matrix UC/Requirements -> Design -> Test.
+                            Write all output in ENGLISH. Do NOT translate document-specific identifiers,
+                            use case names, or any term exactly as it appears in the document.
                             
-                            DOCUMENTO:
+                            DOCUMENT:
                             ===BEGIN===
                             %s
                             ===END===
-                            """.formatted(truncate(documentText, 80000)),
+                            """.formatted(documentText),
                     TraceabilityMatrixResponse.class, "TraceabilityMatrixAgent");
 
             if (response != null && response.entries() != null) {
@@ -103,6 +106,6 @@ public class TraceabilityMatrixAgent {
 
     private String truncate(String text, int maxChars) {
         if (text.length() <= maxChars) return text;
-        return text.substring(0, maxChars) + "\n[... troncato ...]";
+        return text.substring(0, maxChars) + "\n[... truncated ...]";
     }
 }

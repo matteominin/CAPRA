@@ -46,7 +46,8 @@ public class GlossaryConsistencyAgent {
                 - severity = "MAJOR" if the inconsistency can cause real misunderstandings
                 - severity = "MINOR" if it's just a matter of style
                 - suggestion: indicate which term should be used uniformly and why
-                - Write in ITALIAN
+                - Write in ENGLISH. Do NOT translate the actual inconsistent terms found in
+                  the document — quote them exactly as they appear.
                 - DO NOT invent inconsistencies: if the document is terminologically consistent, return an empty list
                 - Maximum 10 issues: report only the most significant
                 """;
@@ -70,14 +71,16 @@ public class GlossaryConsistencyAgent {
             GlossaryResponse response = ResilientLlmCaller.callEntity(
                     chatClient, SYSTEM_PROMPT,
                     """
-                            Analizza il seguente documento di Ingegneria del Software
-                            e identifica tutte le incoerenze terminologiche.
+                            Analyze the following Software Engineering document
+                            and identify all terminological inconsistencies.
+                            Write all output in ENGLISH. Quote the inconsistent terms exactly
+                            as they appear in the document — do NOT translate them.
                             
-                            DOCUMENTO:
+                            DOCUMENT:
                             ===BEGIN===
                             %s
                             ===END===
-                            """.formatted(truncate(documentText, 80000)),
+                            """.formatted(documentText),
                     GlossaryResponse.class, "GlossaryConsistencyAgent");
 
             if (response != null && response.issues() != null) {
@@ -95,10 +98,5 @@ public class GlossaryConsistencyAgent {
             log.error("GlossaryConsistencyAgent: error during analysis", e);
             return List.of();
         }
-    }
-
-    private String truncate(String text, int maxChars) {
-        if (text.length() <= maxChars) return text;
-        return text.substring(0, maxChars) + "\n[... troncato ...]";
     }
 }

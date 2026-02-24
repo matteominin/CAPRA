@@ -102,16 +102,19 @@ public class ConsistencyManager {
             VerificationResponse response = ResilientLlmCaller.callEntity(
                     chatClient, SYSTEM_PROMPT,
                     """
-                            TESTO ORIGINALE DEL DOCUMENTO:
+                            ORIGINAL DOCUMENT TEXT:
                             ===BEGIN DOCUMENT===
                             %s
                             ===END DOCUMENT===
                             
-                            ISSUES DA VERIFICARE:
+                            ISSUES TO VERIFY:
                             %s
                             
-                            Per ogni issue, verifica la citazione nel testo originale sopra
-                            e decidi se confermare o rigettare. ATTENZIONE: identifica e rimuovi i duplicati.
+                            For each issue, verify the quote in the original document text above
+                            and decide whether to confirm or reject it.
+                            IMPORTANT: identify recurring patterns and merge duplicate issues.
+                            Write all output in ENGLISH. Do NOT translate document-specific identifiers,
+                            use case names, or any term exactly as it appears in the document.
                             """.formatted(documentText, issuesJson),
                     VerificationResponse.class, "ConsistencyManager");
 
