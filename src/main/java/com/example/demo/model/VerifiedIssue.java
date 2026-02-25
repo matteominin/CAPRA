@@ -7,6 +7,7 @@ package com.example.demo.model;
 public record VerifiedIssue(
         String id,
         Severity severity,
+        String shortDescription,
         String description,
         int pageReference,
         String quote,
@@ -21,6 +22,6 @@ public record VerifiedIssue(
      * Converts to a standard AuditIssue (discarding verification fields).
      */
     public AuditIssue toAuditIssue() {
-        return new AuditIssue(id, severity, description, pageReference, quote, category, recommendation, confidenceScore);
+        return new AuditIssue(id, severity, shortDescription, description, pageReference, quote, category, recommendation, confidenceScore);
     }
 }

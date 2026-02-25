@@ -1,0 +1,20 @@
+\babel@toc {english}{}\relax 
+\contentsline {section}{\numberline {1}Project Overview}{2}{section.1}%
+\contentsline {section}{\numberline {2}Requirements Analysis --- 3 Proposals}{3}{section.2}%
+\contentsline {subsection}{\numberline {2.1}Proposal A --- Two subsections with description lists}{3}{subsection.2.1}%
+\contentsline {subsection}{\numberline {2.2}Proposal B --- Compact table + details for gaps}{3}{subsection.2.2}%
+\contentsline {paragraph}{\nonumberline Requirements without UCs:}{4}{paragraph*.5}%
+\contentsline {subsection}{\numberline {2.3}Proposal C --- Minimal list, only gap details}{4}{subsection.2.3}%
+\contentsline {section}{\numberline {3}Architecture Analysis}{5}{section.3}%
+\contentsline {section}{\numberline {4}Use Case Analysis}{5}{section.4}%
+\contentsline {subsection}{\numberline {4.1}Use Cases with Structured Template}{5}{subsection.4.1}%
+\contentsline {subsection}{\numberline {4.2}Use Cases without Structured Template}{5}{subsection.4.2}%
+\contentsline {section}{\numberline {5}Testing Analysis}{6}{section.5}%
+\contentsline {subsection}{\numberline {5.1}Testing Strategy}{6}{subsection.5.1}%
+\contentsline {subsection}{\numberline {5.2}Missing Test Coverage}{6}{subsection.5.2}%
+\contentsline {section}{\numberline {6}Traceability Analysis}{7}{section.6}%
+\contentsline {subsection}{\numberline {6.1}Traceability Gaps}{7}{subsection.6.1}%
+\contentsline {subsection}{\numberline {6.2}Fully Traced Use Cases}{7}{subsection.6.2}%
+\contentsline {section}{\numberline {7}Missing Features}{7}{section.7}%
+\contentsline {paragraph}{\nonumberline Definition and Documentation of Use Cases}{7}{paragraph*.13}%
+\providecommand \tocbasic@end@toc@file {}\tocbasic@end@toc@file 

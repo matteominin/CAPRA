@@ -20,13 +20,13 @@ import java.util.stream.Collectors;
  * Uses Haiku 4.5 (Anthropic) for narrative sections with fallback to GPT-5.1 (OpenAI).
  * <p>
  * Report structure:
- * 1. Document Context
- * 2. Executive Summary
- * 3. Strengths
- * 4. Feature Coverage (from MongoDB)
- * 5. Summary Table
- * 6. Category Detail (grouped by UC)
- * 7. Priority Recommendations
+ * 1. Project Overview (what the project does + inline stats)
+ * 2. Requirements Analysis (requirement listing with UC linkage)
+ * 3. Architecture Analysis (LLM description + issues)
+ * 4. Use Case Analysis (all UCs split by template/no-template, templates as tables)
+ * 5. Testing Analysis (strategy + additional test issues)
+ * 6. Traceability Analysis (Req -> UC -> Design -> Test matrix)
+ * 7. Missing Features (centered table + details)
  */
 @Service
 public class LatexReportService {
@@ -45,14 +45,26 @@ public class LatexReportService {
         this.properties = properties;
     }
 
-    public Path generateReport(AuditReport report, String fullText) {
-        log.info("Generating LaTeX report for '{}' ({} issues, {} features)",
-                report.documentName(), report.totalIssues(), report.featureCoverage().size());
+    /**
+     * Generates the complete LaTeX report.
+     *
+     * @param report                 aggregated audit report
+     * @param fullText               original document text
+     * @param missingFeatures        only PARTIAL/ABSENT features (pre-filtered)
+     * @param allFeatures            all features (for metrics)
+     * @param extractionCompleteness metrics from ReportNormalizer
+     * @return path to the generated .tex file
+     */
+    public Path generateReport(AuditReport report, String fullText,
+                                List<FeatureCoverage> missingFeatures,
+                                List<FeatureCoverage> allFeatures,
+                                Map<String, String> extractionCompleteness) {
+        log.info("Generating LaTeX report for '{}' ({} issues, {} missing features)",
+                report.documentName(), report.totalIssues(), missingFeatures.size());
 
-        String documentContext = generateDocumentContext(fullText);
-        String executiveSummary = generateExecutiveSummary(report);
-        String strengths = generateStrengths(report, fullText);
-        String latexContent = buildLatexDocument(report, executiveSummary, documentContext, strengths);
+        String summaryContent = generateSummarySection(report, allFeatures, extractionCompleteness);
+        String latexContent = buildLatexDocument(report, summaryContent, missingFeatures,
+                allFeatures, extractionCompleteness, fullText);
 
         try {
             String timestamp = java.time.LocalDateTime.now()
@@ -72,170 +84,91 @@ public class LatexReportService {
     // LLM-generated sections
     // ═══════════════════════════════════════════════════
 
-    private String generateDocumentContext(String fullText) {
-        String contextPrompt = """
-            Analyze the following text from a software project document (thesis/report)
-            and generate a structured overview directly in valid LaTeX code.
-            
-            You must extract and summarize ALL the following sections. DO NOT truncate the output.
-            Generate ONLY the LaTeX body (NO \\documentclass, NO \\begin{document}).
-            
-            OUTPUT FORMAT (pure LaTeX):
-            Use \\subsection*{Project Objective} for each heading.
-            Use \\begin{itemize} ... \\item ... \\end{itemize} for lists.
-            Use \\texttt{} for technical names and \\textbf{} for emphasis.
-            
-            SECTIONS TO GENERATE:
-            - Project Objective: what the application does in 2-3 sentences.
-            - Main Use Cases: list ALL Use Cases in the format "UC-N -- Name: short description".
-            - Functional Requirements: list the key functional requirements.
-            - Non-Functional Requirements: list the non-functional requirements (performance, security, etc.).
-            - Architecture: briefly describe the architecture (patterns, technologies, structure).
-            - Testing Strategy: briefly describe how the requirements are tested.
-            
-            CRITICAL RULES:
-            - Write in English
-            - Be CONCISE: max 2 lines per point, max 1 line per requirement/UC
-            - Generate ONLY valid and compilable LaTeX code
-            - Properly escape special characters: & as \\&, % as \\%, _ as \\_
-            - DO NOT generate \\documentclass, \\begin{document}, \\end{document}
-            - DO NOT use non-standard packages (only itemize, enumerate, subsection, textbf, texttt)
-            - DO NOT use Unicode characters or special symbols: use only ASCII characters and standard LaTeX commands (e.g., $\\in$ instead of ∈)
-            - If a section is not present in the document, write "Not described in the document."
-            - COMPLETE ALL SECTIONS: do not stop halfway
-            - Write the output in ENGLISH. Do NOT translate document-specific names, use case identifiers,
-              class names, or any term exactly as it appears in the analyzed document.
-            """;
-
-        try {
-                String context = callLlmWithFallback(contextPrompt,
-                    "Here is the document text:\n\n" + fullText);
-            log.debug("Document context generated ({} characters)", context.length());
-            return context;
-        } catch (Exception e) {
-            log.warn("Unable to generate document context: {}", e.getMessage());
-            return "The document context is not available due to an error in automatic generation.";
-        }
-    }
-
-    private String generateExecutiveSummary(AuditReport report) {
+    private String generateSummarySection(AuditReport report,
+                                           List<FeatureCoverage> allFeatures,
+                                           Map<String, String> extractionCompleteness) {
         if (report.issues().isEmpty()) {
             return "The document analysis did not reveal any significant issues. "
-                + "The document appears well-structured and coherent.";
+                    + "The document appears well-structured and coherent.";
         }
 
         Map<String, List<AuditIssue>> byCategory = report.issues().stream()
-            .collect(Collectors.groupingBy(i -> i.category() != null ? i.category() : "Other",
-                LinkedHashMap::new, Collectors.toList()));
+                .collect(Collectors.groupingBy(i -> i.category() != null ? i.category() : "Other",
+                        LinkedHashMap::new, Collectors.toList()));
 
         StringBuilder issuesSummary = new StringBuilder();
         for (var entry : byCategory.entrySet()) {
             issuesSummary.append("\nCategory %s (%d issues):\n".formatted(entry.getKey(), entry.getValue().size()));
             for (AuditIssue i : entry.getValue()) {
                 issuesSummary.append("- [%s] %s: %s (p. %d)\n".formatted(
-                        i.severity(), i.id(), i.description(), i.pageReference()));
+                        i.severity(), i.id(),
+                        i.shortDescription() != null ? i.shortDescription() : i.description(),
+                        i.pageReference()));
             }
         }
 
+        StringBuilder featureSummary = new StringBuilder();
+        if (allFeatures != null && !allFeatures.isEmpty()) {
+            long present = allFeatures.stream().filter(f -> f.status() == FeatureCoverage.FeatureStatus.PRESENT).count();
+            long partial = allFeatures.stream().filter(f -> f.status() == FeatureCoverage.FeatureStatus.PARTIAL).count();
+            long absent = allFeatures.stream().filter(f -> f.status() == FeatureCoverage.FeatureStatus.ABSENT).count();
+            featureSummary.append("\nFeature coverage: %d present, %d partial, %d absent (out of %d)\n"
+                    .formatted(present, partial, absent, allFeatures.size()));
+        }
+
         String systemPrompt = """
-            You are a Software Engineering expert. Generate an executive summary in English
+            You are a Software Engineering expert. Generate a PROJECT OVERVIEW in English
             for an audit report of a SWE document written by a university student.
             Generate the output directly in valid LaTeX code.
                 
-            It must be concise (3-5 short paragraphs) and must:
-            1. Briefly frame the document and its purpose (2-3 sentences)
-            2. Highlight the patterns of issues found (do not list every single issue)
-            3. Indicate the critical areas (severity HIGH)
-            4. Give an overall quality assessment
-            5. Suggest the 3 priority actions
+            YOUR TASK: Describe ONLY what the project is about.
+            Write a concise description of the system the student designed:
+            - What is the application domain?
+            - What are the main features and functionalities?
+            - What technologies and frameworks are used?
+            - What architectural patterns are mentioned?
+                
+            DO NOT discuss the quality of the document.
+            DO NOT mention audit findings, issues, or recommendations.
+            DO NOT say things like "this document" or "this software engineering document".
+            Instead, refer to "the project" or use the project/system name directly.
                 
             OUTPUT FORMAT (pure LaTeX):
-            - Use normal paragraphs separated by blank lines
-            - Use \\textbf{} for emphasis and \\begin{enumerate} for priority actions
+            - One or two short paragraphs
+            - Use \\textbf{} for emphasis on key technologies and patterns
             - Properly escape: & as \\&, % as \\%, _ as \\_
-            - DO NOT generate \\documentclass, \\begin{document}, \\section
+            - DO NOT generate \\documentclass, \\begin{document}, \\section, \\subsection
             - DO NOT use non-standard packages
-            - DO NOT use Unicode characters or special symbols: use only ASCII characters and standard LaTeX commands (e.g., $\\in$ instead of ∈)
-            - COMPLETE the entire summary: do not stop halfway
-            - Maximum 500 words total
+            - DO NOT use Unicode characters or special symbols: use only ASCII characters and standard LaTeX commands
+            - COMPLETE the entire description: do not stop halfway
+            - Maximum 200 words total
+            - Use a formal, professional, and objective tone
             """;
 
         String userPrompt = """
-            Generate the executive summary for the audit of document '%s'.
+            Generate the project overview for the document '%s'.
             Total issues found: %d (HIGH: %d, MEDIUM: %d, LOW: %d)
-                
+            %s
             %s""".formatted(
-            report.documentName(),
-            report.totalIssues(),
-            report.severityDistribution().getOrDefault(Severity.HIGH, 0L),
-            report.severityDistribution().getOrDefault(Severity.MEDIUM, 0L),
-            report.severityDistribution().getOrDefault(Severity.LOW, 0L),
-            issuesSummary);
+                report.documentName(),
+                report.totalIssues(),
+                report.severityDistribution().getOrDefault(Severity.HIGH, 0L),
+                report.severityDistribution().getOrDefault(Severity.MEDIUM, 0L),
+                report.severityDistribution().getOrDefault(Severity.LOW, 0L),
+                issuesSummary,
+                featureSummary);
 
         try {
             String summary = callLlmWithFallback(systemPrompt, userPrompt);
-            log.debug("Executive summary generated ({} characters)", summary.length());
+            log.debug("Summary generated ({} characters)", summary.length());
             return summary;
         } catch (Exception e) {
-            log.warn("Unable to generate executive summary: {}", e.getMessage());
+            log.warn("Unable to generate summary: {}", e.getMessage());
             return ("The analysis of document '%s' found %d issues, " +
-                    "of which %d are high severity. A thorough review of the critical areas identified in the report is recommended.").formatted(
+                    "of which %d are high severity. A thorough review of the critical areas is recommended.").formatted(
                     report.documentName(),
                     report.totalIssues(),
                     report.severityDistribution().getOrDefault(Severity.HIGH, 0L));
-        }
-    }
-
-    /**
-     * Generates the "Strengths" section — positive aspects of the document.
-     */
-    private String generateStrengths(AuditReport report, String fullText) {
-        String systemPrompt = """
-                You are a Software Engineering expert. Analyze a SWE project document (thesis/report)
-                and identify the STRENGTHS of the student's work.
-                
-                Generate the output directly as valid LaTeX code. Write in ENGLISH.
-                Do NOT translate document-specific names, use case identifiers, or technical terms
-                as they appear in the document.
-                
-                Identify 3-6 positive aspects of the document, for example:
-                - Clear and well-organized structure
-                - Good use case coverage
-                - Thorough testing
-                - Complete requirements documentation
-                - Well-defined architecture
-                - Correct use of design patterns
-                
-                OUTPUT FORMAT (pure LaTeX):
-                Generate a \\begin{itemize} with one \\item per strength.
-                Use \\textbf{} for the title and normal text for the explanation.
-                Escape correctly: & as \\&, % as \\%, _ as \\_
-                DO NOT generate \\documentclass, \\begin{document}, \\section.
-                
-                RULES:
-                - Each strength must be specific and based on EVIDENCE in the text
-                - DO NOT invent strengths that are not supported by the document
-                - Maximum 200 words total
-                """;
-
-        String userPrompt = """
-                Identify the strengths of this SWE document.
-                The document has %d identified issues in the following categories: %s.
-                Write the output in ENGLISH.
-                
-                DOCUMENT (excerpt):
-                %s""".formatted(
-                report.totalIssues(),
-                report.issues().stream()
-                        .map(i -> i.category() != null ? i.category() : "Altro")
-                        .distinct().collect(Collectors.joining(", ")),
-                truncateForPrompt(fullText, 30000));
-
-        try {
-            return callLlmWithFallback(systemPrompt, userPrompt);
-        } catch (Exception e) {
-            log.warn("Unable to generate strengths section: {}", e.getMessage());
-            return "The strengths analysis is not available due to an error in automatic generation.";
         }
     }
 
@@ -252,9 +185,9 @@ public class LatexReportService {
             if (result != null && !result.isBlank()) {
                 return result;
             }
-            log.warn("Anthropic ha restituito risposta vuota, provo con OpenAI...");
+            log.warn("Anthropic returned empty response, trying OpenAI...");
         } catch (Exception e) {
-            log.warn("Anthropic fallito ({}), provo con OpenAI...", e.getMessage());
+            log.warn("Anthropic failed ({}), trying OpenAI...", e.getMessage());
         }
 
         org.springframework.ai.chat.model.ChatResponse chatResponse = analysisChatClient.prompt()
@@ -268,13 +201,6 @@ public class LatexReportService {
         return result != null ? result : "";
     }
 
-    /**
-     * Accumulates token usage from a ChatResponse into the per-request
-     * {@link TokenUsageAccumulator} (if one is active for the current thread).
-     *
-     * @param chatResponse the response to extract usage from
-     * @param isAnthropic  {@code true} → counts toward Anthropic, {@code false} → OpenAI
-     */
     private void captureTokens(org.springframework.ai.chat.model.ChatResponse chatResponse,
                                 boolean isAnthropic) {
         if (chatResponse == null) return;
@@ -290,12 +216,8 @@ public class LatexReportService {
             if (acc == null) return;
             if (isAnthropic) {
                 acc.addAnthropicTokens(input, output);
-                log.debug("LatexReportService: +{} in / +{} out Anthropic tokens (model={})",
-                        input, output, metadata.getModel());
             } else {
                 acc.addOpenAiTokens(input, output);
-                log.debug("LatexReportService: +{} in / +{} out OpenAI tokens (fallback, model={})",
-                        input, output, metadata.getModel());
             }
         } catch (Exception e) {
             log.debug("LatexReportService: failed to capture token usage — {}", e.getMessage());
@@ -303,21 +225,23 @@ public class LatexReportService {
     }
 
     // ═══════════════════════════════════════════════════
-    // LaTeX document building
+    // LaTeX document building — NEW TEMPLATE
     // ═══════════════════════════════════════════════════
 
     private String buildLatexDocument(AuditReport report, String summary,
-                                      String documentContext, String strengths) {
+                                      List<FeatureCoverage> missingFeatures,
+                                      List<FeatureCoverage> allFeatures,
+                                      Map<String, String> extractionCompleteness,
+                                      String fullText) {
         var sb = new StringBuilder();
 
-        // Preambolo
+        // ── Preamble ──
         sb.append("""
             \\documentclass[11pt,a4paper]{scrartcl}
             \\usepackage[utf8]{inputenc}
             \\usepackage[T1]{fontenc}
             \\usepackage[english]{babel}
             \\usepackage{ragged2e}
-            \\usepackage{xcolor}
             \\usepackage{hyperref}
             \\usepackage{enumitem}
             \\usepackage{booktabs}
@@ -329,26 +253,23 @@ public class LatexReportService {
             \\geometry{a4paper, margin=2.5cm}
             \\setlength{\\emergencystretch}{3em}
                 
-            \\definecolor{highcolor}{RGB}{180,0,0}
-            \\definecolor{medcolor}{RGB}{180,100,0}
-            \\definecolor{lowcolor}{RGB}{80,80,80}
-            \\definecolor{present}{RGB}{0,120,0}
-            \\definecolor{partial}{RGB}{180,140,0}
-            \\definecolor{absent}{RGB}{180,0,0}
-            \\definecolor{scoreA}{RGB}{0,130,0}
-            \\definecolor{scoreB}{RGB}{80,160,0}
-            \\definecolor{scoreC}{RGB}{180,140,0}
-            \\definecolor{scoreD}{RGB}{200,80,0}
-            \\definecolor{scoreF}{RGB}{180,0,0}
+            \\hypersetup{
+              colorlinks=true,
+              linkcolor=blue!70!black,
+              urlcolor=blue!70!black,
+            }
+                
+            \\newcommand{\\ok}{$\\checkmark$}
+            \\newcommand{\\nok}{$\\times$}
                 
             \\pagestyle{fancy}
             \\fancyhf{}
-            \\fancyhead[L]{\\small CAPRA}
+            \\fancyhead[L]{\\small CAPRA --- Software Engineering Audit}
             \\fancyhead[R]{\\small \\today}
             \\fancyfoot[C]{\\thepage}
                 
             \\title{Software Engineering Audit Report\\\\[0.3em]\\large %s}
-            \\author{CAPRA}
+            \\author{CAPRA --- Automated Audit System}
             \\date{\\today}
             \\begin{document}
             \\maketitle
@@ -356,606 +277,740 @@ public class LatexReportService {
             \\newpage
             """.formatted(escapeLatex(report.documentName())));
 
-        // ── 1. Document Context ──
-        sb.append("\\section{Document Context}\n");
-        sb.append("\\begin{small}\n");
-        sb.append(sanitizeLlmLatex(documentContext));
-        sb.append("\n\\end{small}\n\n");
-
-        // ── 2. Executive Summary ──
-        sb.append("\\section{Executive Summary}\n");
-        sb.append(formatSynthesisSection(summary, report));
-        sb.append("\n\n");
-
-        // ── 3. Strengths ──
-        sb.append("\\section{Strengths}\n");
-        sb.append("\\begin{small}\n");
-        sb.append(sanitizeLlmLatex(strengths));
-        sb.append("\n\\end{small}\n\n");
-
-        // ── 5. Feature Coverage (da MongoDB) ──
-        if (!report.featureCoverage().isEmpty()) {
-            sb.append("\\section{Expected Feature Coverage}\n");
-            sb.append(buildFeatureCoverageSection(report.featureCoverage()));
-        }
-
-        // ── 6. Summary Table ──
-        sb.append("\\section{Summary Table}\n");
-        sb.append(buildSummaryTable(report));
+        // ── 1. Project Overview ──
+        sb.append("\\section{Project Overview}\n");
+        sb.append("\\label{sec:overview}\n");
+        sb.append(buildSummaryWithMetrics(report, summary, allFeatures, extractionCompleteness));
         sb.append("\n");
 
-        // ── 7. Detailed Issues ──
-        sb.append("\\section{Issue Details}\n");
-        if (report.issues().isEmpty()) {
-            sb.append("No issues found during the audit.\n\n");
-        } else {
-            buildDetailByCategoryAndUC(sb, report);
-        }
+        // ── 2. Requirements Analysis ──
+        sb.append("\\section{Requirements Analysis}\n");
+        sb.append("\\label{sec:requirements}\n");
+        sb.append(buildRequirementsSection(report));
+        sb.append("\n");
 
-        // ── 8. Priority Recommendations ──
-        sb.append("\\section{Priority Recommendations}\n");
-        sb.append(buildPriorityRecommendations(report));
+        // ── 3. Architecture Analysis ──
+        sb.append("\\section{Architecture Analysis}\n");
+        sb.append("\\label{sec:architecture}\n");
+        sb.append(buildArchitectureSection(report, fullText));
+        sb.append("\n");
 
-        // ── 9. Traceability Matrix ──
-        if (report.traceabilityMatrix() != null && !report.traceabilityMatrix().isEmpty()) {
-            sb.append("\\section{Traceability Matrix}\n");
-            sb.append(buildTraceabilityMatrix(report.traceabilityMatrix()));
-        }
+        // ── 4. Use Case Analysis ──
+        sb.append("\\section{Use Case Analysis}\n");
+        sb.append("\\label{sec:usecases}\n");
+        sb.append(buildUseCaseSection(report, fullText));
+        sb.append("\n");
 
-        // ── 10. Glossary Issues ──
-        if (report.glossaryIssues() != null && !report.glossaryIssues().isEmpty()) {
-            sb.append("\\section{Terminological Consistency}\n");
-            sb.append(buildGlossaryIssuesSection(report.glossaryIssues()));
-        }
+        // ── 5. Testing Analysis ──
+        sb.append("\\section{Testing Analysis}\n");
+        sb.append("\\label{sec:testing}\n");
+        sb.append(buildTestingSection(report, fullText));
+        sb.append("\n");
+
+        // ── 6. Traceability Analysis ──
+        sb.append("\\section{Traceability Analysis}\n");
+        sb.append("\\label{sec:traceability}\n");
+        sb.append(buildTraceabilitySection(report));
+        sb.append("\n");
+
+        // ── 7. Missing Features ──
+        sb.append("\\section{Missing Features}\n");
+        sb.append(buildMissingFeaturesSection(missingFeatures, allFeatures));
+        sb.append("\n");
 
         sb.append("\\end{document}\n");
         return sb.toString();
     }
 
+    // ═══════════════════════════════════════════════════
+    // Section builders
+    // ═══════════════════════════════════════════════════
+
     /**
-     * Scorecard -- computes a grade (A-F) for each category based on issue count and severity.
-     * Formula: score = max(0, 100 - HIGH*25 - MEDIUM*10 - LOW*3)
-     * A: 90-100, B: 75-89, C: 60-74, D: 40-59, F: 0-39
-     * NOTE: currently unused, retained for future use.
+     * Section 1: Project Overview — LLM project description + inline stats line.
      */
-    @SuppressWarnings("unused")
-    private String buildScorecard(AuditReport report) {
-        if (report.issues().isEmpty()) {
-            return "No issues detected: overall assessment excellent.\n\n";
-        }
-
-        Map<String, List<AuditIssue>> byCategory = report.issues().stream()
-                .collect(Collectors.groupingBy(
-                        i -> i.category() != null ? i.category() : "Other",
-                        LinkedHashMap::new, Collectors.toList()));
-
+    private String buildSummaryWithMetrics(AuditReport report, String summaryText,
+                                            List<FeatureCoverage> allFeatures,
+                                            Map<String, String> extractionCompleteness) {
         var sb = new StringBuilder();
-        sb.append("\\begin{center}\n");
-        sb.append("\\begin{tabular}{l c c c c c}\n");
-        sb.append("\\toprule\n");
-        sb.append("\\textbf{Area} & \\textbf{HIGH} & \\textbf{MEDIUM} & \\textbf{LOW} & \\textbf{Score} & \\textbf{Grade} \\\\\n");
-        sb.append("\\midrule\n");
 
-        int totalScore = 0;
-        int categoryCount = 0;
+        // ── LLM narrative text ──
+        sb.append(sanitizeLlmLatex(summaryText));
+        sb.append("\n\n");
 
-        for (var entry : byCategory.entrySet()) {
-            long high = entry.getValue().stream().filter(i -> i.severity() == Severity.HIGH).count();
-            long med = entry.getValue().stream().filter(i -> i.severity() == Severity.MEDIUM).count();
-            long low = entry.getValue().stream().filter(i -> i.severity() == Severity.LOW).count();
+        // ── Inline stats line ──
+        long high = report.severityDistribution().getOrDefault(Severity.HIGH, 0L);
+        long med = report.severityDistribution().getOrDefault(Severity.MEDIUM, 0L);
+        long low = report.severityDistribution().getOrDefault(Severity.LOW, 0L);
 
-            int score = (int) Math.max(0, 100 - high * 25 - med * 10 - low * 3);
-            String grade = scoreToGrade(score);
-            String gradeColor = scoreToColor(score);
-            totalScore += score;
-            categoryCount++;
+        sb.append("\\noindent\\rule{\\textwidth}{0.4pt}\\\\\n");
+        sb.append("{\\small Issues found: \\textbf{%d} (HIGH: %d, MEDIUM: %d, LOW: %d)".formatted(
+                report.totalIssues(), high, med, low));
 
-            sb.append("%s & %d & %d & %d & %d/100 & \\textcolor{%s}{\\textbf{%s}} \\\\\n".formatted(
-                    escapeLatex(entry.getKey()), high, med, low, score, gradeColor, grade));
+        if (allFeatures != null && !allFeatures.isEmpty()) {
+            long present = allFeatures.stream().filter(f -> f.status() == FeatureCoverage.FeatureStatus.PRESENT).count();
+            long partial = allFeatures.stream().filter(f -> f.status() == FeatureCoverage.FeatureStatus.PARTIAL).count();
+            long absent = allFeatures.stream().filter(f -> f.status() == FeatureCoverage.FeatureStatus.ABSENT).count();
+            sb.append(" \\quad---\\quad Features: %d/%d present".formatted(present, allFeatures.size()));
+            if (partial > 0) sb.append(", %d partial".formatted(partial));
+            if (absent > 0) sb.append(", %d absent".formatted(absent));
+        }
+        sb.append("}\n\n");
+
+        return sb.toString();
+    }
+
+    /**
+     * Section 6: Missing Features — centered summary table + paragraph details.
+     */
+    private String buildMissingFeaturesSection(List<FeatureCoverage> missingFeatures,
+                                                List<FeatureCoverage> allFeatures) {
+        var sb = new StringBuilder();
+
+        if (allFeatures == null || allFeatures.isEmpty()) {
+            sb.append("No feature checklist was configured for this audit.\n\n");
+            return sb.toString();
         }
 
-        int avgScore = categoryCount > 0 ? totalScore / categoryCount : 100;
-        String avgGrade = scoreToGrade(avgScore);
-        String avgColor = scoreToColor(avgScore);
+        long totalPresent = allFeatures.stream()
+                .filter(f -> f.status() == FeatureCoverage.FeatureStatus.PRESENT).count();
 
+        if (missingFeatures.isEmpty()) {
+            sb.append("All %d expected features are fully present in the document. No missing features detected.\n\n"
+                    .formatted(allFeatures.size()));
+            return sb.toString();
+        }
+
+        // ── Centered summary table ──
+        sb.append("\\begin{center}\n");
+        sb.append("\\begin{tabular}{>{\\RaggedRight\\arraybackslash}p{6cm} c c}\n");
+        sb.append("\\toprule\n");
+        sb.append("\\textbf{Feature} & \\textbf{Status} & \\textbf{Coverage} \\\\\n");
         sb.append("\\midrule\n");
-        sb.append("\\textbf{Overall Average} & & & & \\textbf{%d/100} & \\textcolor{%s}{\\textbf{%s}} \\\\\n"
-                .formatted(avgScore, avgColor, avgGrade));
+
+        for (FeatureCoverage f : missingFeatures) {
+            String statusLabel = f.status() == FeatureCoverage.FeatureStatus.PARTIAL ? "partial" : "absent";
+            sb.append("%s & \\textsc{%s} & %d\\%% \\\\\n".formatted(
+                    escapeLatex(f.featureName()), statusLabel, f.coverageScore()));
+        }
+        if (totalPresent > 0) {
+            sb.append("\\textit{%d other feature(s)} & \\textsc{present} & 100\\%% \\\\\n"
+                    .formatted(totalPresent));
+        }
         sb.append("\\bottomrule\n");
         sb.append("\\end{tabular}\n");
         sb.append("\\end{center}\n\n");
 
+        // ── Details for each problematic feature ──
+        for (FeatureCoverage f : missingFeatures) {
+            sb.append("\\paragraph{%s}\n".formatted(escapeLatex(f.featureName())));
+            if (f.evidence() != null && !f.evidence().isBlank()) {
+                sb.append("%s ".formatted(escapeLatex(f.evidence())));
+            } else {
+                sb.append("This feature is %s in the document. ".formatted(
+                        f.status() == FeatureCoverage.FeatureStatus.PARTIAL
+                                ? "only partially covered" : "not present"));
+            }
+            String suggestion = f.status() == FeatureCoverage.FeatureStatus.PARTIAL
+                    ? "Expand the existing coverage to address the missing aspects."
+                    : "Add a dedicated section that addresses this feature.";
+            sb.append("$\\rightarrow$ %s\n\n".formatted(escapeLatex(suggestion)));
+        }
+
         return sb.toString();
     }
 
-    private String scoreToGrade(int score) {
-        if (score >= 90) return "A";
-        if (score >= 75) return "B";
-        if (score >= 60) return "C";
-        if (score >= 40) return "D";
-        return "F";
-    }
-
-    private String scoreToColor(int score) {
-        if (score >= 90) return "scoreA";
-        if (score >= 75) return "scoreB";
-        if (score >= 60) return "scoreC";
-        if (score >= 40) return "scoreD";
-        return "scoreF";
-    }
-
     /**
-     * Feature coverage section — table with each feature's status and coverage bar.
+     * Section 2: Requirements Analysis — table listing requirements
+     * with their UC linkage status. Requirements without UCs are flagged.
      */
-    private String buildFeatureCoverageSection(List<FeatureCoverage> features) {
+    private String buildRequirementsSection(AuditReport report) {
         var sb = new StringBuilder();
 
-        // Summary count
-        long present = features.stream().filter(f -> f.status() == FeatureCoverage.FeatureStatus.PRESENT).count();
-        long partial = features.stream().filter(f -> f.status() == FeatureCoverage.FeatureStatus.PARTIAL).count();
-        long absent = features.stream().filter(f -> f.status() == FeatureCoverage.FeatureStatus.ABSENT).count();
-        int avgCoverage = (int) features.stream().mapToInt(FeatureCoverage::coverageScore).average().orElse(0);
+        if (report.traceabilityMatrix() == null || report.traceabilityMatrix().isEmpty()) {
+            sb.append("No requirements or use cases could be traced in the document.\n\n");
+            return sb.toString();
+        }
 
-        sb.append("Of %d expected features: \\textcolor{present}{%d present}, \\textcolor{partial}{%d partial}, \\textcolor{absent}{%d absent}. "
-                .formatted(features.size(), present, partial, absent));
-        sb.append("Average coverage: \\textbf{%d\\%%}.\n\n".formatted(avgCoverage));
+        List<TraceabilityEntry> entries = report.traceabilityMatrix();
 
-        // Detailed table
-        sb.append("\\begin{longtable}{>{\\RaggedRight\\arraybackslash\\hspace{0pt}}p{5cm} c c >{\\RaggedRight\\arraybackslash\\hspace{0pt}}p{6cm}}\n");
+        // Group entries by requirementId to build the requirements table
+        // A requirement may link to multiple UCs
+        Map<String, List<TraceabilityEntry>> byReq = new LinkedHashMap<>();
+        List<TraceabilityEntry> orphanUCs = new ArrayList<>(); // UCs without a parent req
+
+        for (TraceabilityEntry e : entries) {
+            if (e.requirementId() != null && !e.requirementId().isBlank()) {
+                byReq.computeIfAbsent(e.requirementId(), k -> new ArrayList<>()).add(e);
+            } else if (e.useCaseId() != null && !e.useCaseId().isBlank()) {
+                orphanUCs.add(e); // UC without parent requirement - not shown here
+            } else {
+                // Requirement with no UC (useCaseId is null)
+                byReq.computeIfAbsent(e.requirementId() != null ? e.requirementId() : "UNKNOWN",
+                        k -> new ArrayList<>()).add(e);
+            }
+        }
+
+        sb.append("\\textit{This section lists the functional requirements identified in the document ");
+        sb.append("and indicates whether each has an associated use case.}\n\n");
+
+        // Build requirements table
+        sb.append("\\begin{center}\n");
+        sb.append("\\begin{longtable}{l >{\\RaggedRight\\arraybackslash}p{4.5cm} c >{\\RaggedRight\\arraybackslash}p{4.5cm}}\n");
         sb.append("\\toprule\n");
-        sb.append("\\textbf{Feature} & \\textbf{Status} & \\textbf{Coverage} & \\textbf{Evidence} \\\\\n");
+        sb.append("\\textbf{Req.} & \\textbf{Name} & \\textbf{UC?} & \\textbf{Linked UCs} \\\\\n");
         sb.append("\\midrule\n");
         sb.append("\\endhead\n");
 
-        for (FeatureCoverage f : features) {
-            String statusLabel = switch (f.status()) {
-                case PRESENT -> "\\textcolor{present}{Present}";
-                case PARTIAL -> "\\textcolor{partial}{Partial}";
-                case ABSENT -> "\\textcolor{absent}{Absent}";
-            };
+        List<String> reqsWithoutUC = new ArrayList<>();
 
-            String coverageLabel = "%d\\%% (%d/%d)".formatted(f.coverageScore(), f.matchedItems(), f.totalItems());
+        for (var entry : byReq.entrySet()) {
+            String reqId = entry.getKey();
+            List<TraceabilityEntry> reqEntries = entry.getValue();
 
-            sb.append("%s & %s & %s & {\\small %s} \\\\\n".formatted(
-                    escapeLatex(f.featureName()),
-                    statusLabel,
-                    coverageLabel,
-                    escapeLatex(f.evidence() != null ? f.evidence() : "")));
+            // Get requirement name from any entry
+            String reqName = reqEntries.stream()
+                    .filter(e -> e.requirementName() != null && !e.requirementName().isBlank())
+                    .map(TraceabilityEntry::requirementName)
+                    .findFirst().orElse("");
+
+            // Check if any entry has a UC
+            List<String> linkedUCs = reqEntries.stream()
+                    .filter(e -> e.useCaseId() != null && !e.useCaseId().isBlank())
+                    .map(e -> "\\hyperlink{uc:%s}{%s}".formatted(e.useCaseId(), e.useCaseId()))
+                    .toList();
+
+            boolean hasUC = !linkedUCs.isEmpty();
+            String ucMarker = hasUC ? "\\ok" : "\\nok";
+            String ucList = hasUC ? String.join(", ", linkedUCs) : "---";
+
+            sb.append("\\hypertarget{req:%s}{%s} & %s & %s & %s \\\\\n".formatted(
+                    reqId, escapeLatex(reqId), escapeLatex(reqName), ucMarker, ucList));
+
+            if (!hasUC) {
+                reqsWithoutUC.add(reqId);
+            }
         }
 
         sb.append("\\bottomrule\n");
-        sb.append("\\end{longtable}\n\n");
+        sb.append("\\end{longtable}\n");
+        sb.append("\\end{center}\n\n");
+
+        // Requirements without UC — details
+        if (!reqsWithoutUC.isEmpty()) {
+            sb.append("\\paragraph{Requirements without UCs:}\n");
+            sb.append("\\begin{itemize}[leftmargin=*]\n");
+            for (String reqId : reqsWithoutUC) {
+                List<TraceabilityEntry> reqEntries = byReq.get(reqId);
+                String reqName = reqEntries.stream()
+                        .filter(e -> e.requirementName() != null && !e.requirementName().isBlank())
+                        .map(TraceabilityEntry::requirementName)
+                        .findFirst().orElse("");
+                String gap = reqEntries.stream()
+                        .filter(e -> e.gap() != null && !e.gap().isBlank())
+                        .map(TraceabilityEntry::gap)
+                        .findFirst().orElse("No associated use case found.");
+                sb.append("  \\item \\textbf{\\hyperlink{req:%s}{%s}".formatted(reqId, escapeLatex(reqId)));
+                if (!reqName.isBlank()) {
+                    sb.append(" --- %s".formatted(escapeLatex(reqName)));
+                }
+                sb.append(":} %s $\\rightarrow$ Define a UC or mark as out of scope.\n".formatted(
+                        escapeLatex(gap)));
+            }
+            sb.append("\\end{itemize}\n\n");
+        }
 
         return sb.toString();
     }
 
     /**
-     * Summary table Category x Severity.
+     * Section 4: Use Cases — all UCs shown, split by with/without template.
+     * UCs with templates are rendered as centered tables.
+     * Internal structural issues appear below each UC table.
      */
-    private String buildSummaryTable(AuditReport report) {
-        if (report.issues().isEmpty()) {
-            return "No issues found.\n";
-        }
-
-        Map<String, Map<Severity, Long>> matrix = report.issues().stream()
-                .collect(Collectors.groupingBy(
-                        i -> i.category() != null ? i.category() : "Other",
-                        LinkedHashMap::new,
-                        Collectors.groupingBy(AuditIssue::severity, Collectors.counting())));
-
+    private String buildUseCaseSection(AuditReport report, String fullText) {
         var sb = new StringBuilder();
-        sb.append("\\begin{center}\n");
-        sb.append("\\begin{tabular}{l c c c c}\n");
-        sb.append("\\toprule\n");
-        sb.append("\\textbf{Category} & \\textcolor{highcolor}{\\textbf{HIGH}} & " +
-                "\\textcolor{medcolor}{\\textbf{MEDIUM}} & \\textcolor{lowcolor}{\\textbf{LOW}} & " +
-                "\\textbf{Total} \\\\\n");
-        sb.append("\\midrule\n");
 
-        for (var entry : matrix.entrySet()) {
-            long high = entry.getValue().getOrDefault(Severity.HIGH, 0L);
-            long med = entry.getValue().getOrDefault(Severity.MEDIUM, 0L);
-            long low = entry.getValue().getOrDefault(Severity.LOW, 0L);
-            long total = high + med + low;
-            sb.append("%s & %d & %d & %d & %d \\\\\n".formatted(
-                    escapeLatex(entry.getKey()), high, med, low, total));
+        // Collect issues that reference specific UCs (exclude Testing and Architecture)
+        Map<String, List<AuditIssue>> issuesByUC = new LinkedHashMap<>();
+        for (AuditIssue issue : report.issues()) {
+            if ("Testing".equalsIgnoreCase(issue.category())
+                    || "Architecture".equalsIgnoreCase(issue.category())) {
+                continue;
+            }
+            Set<String> ucs = extractAllUCs(issue);
+            for (String uc : ucs) {
+                issuesByUC.computeIfAbsent(uc, k -> new ArrayList<>()).add(issue);
+            }
         }
 
-        sb.append("\\midrule\n");
-        sb.append("\\textbf{Total} & \\textbf{%d} & \\textbf{%d} & \\textbf{%d} & \\textbf{%d} \\\\\n".formatted(
-                report.severityDistribution().getOrDefault(Severity.HIGH, 0L),
-                report.severityDistribution().getOrDefault(Severity.MEDIUM, 0L),
-                report.severityDistribution().getOrDefault(Severity.LOW, 0L),
-                report.totalIssues()));
-        sb.append("\\bottomrule\n");
-        sb.append("\\end{tabular}\n");
-        sb.append("\\end{center}\n");
+        // Build list of all UCs from traceability matrix
+        Set<String> allUCs = new LinkedHashSet<>();
+        if (report.traceabilityMatrix() != null) {
+            for (TraceabilityEntry e : report.traceabilityMatrix()) {
+                if (e.useCaseId() != null && !e.useCaseId().isBlank()) {
+                    allUCs.add(e.useCaseId());
+                }
+            }
+        }
+        allUCs.addAll(issuesByUC.keySet());
+
+        if (allUCs.isEmpty()) {
+            sb.append("No use cases were identifiable in the document.\n\n");
+            return sb.toString();
+        }
+
+        sb.append("The document describes \\textbf{%d use case(s)}. ".formatted(allUCs.size()));
+        sb.append("This section analyzes the \\emph{internal quality} of each use case ");
+        sb.append("(completeness, clarity, consistency of the template). ");
+        sb.append("Traceability to requirements and tests is analyzed in Section~\\ref{sec:traceability}.\n\n");
+
+        // Determine which UCs have templates (have issues referencing them, meaning they were analyzed in detail)
+        // UCs with issues are considered "with template" since the agent found structural details to analyze
+        Set<String> ucsWithIssues = new LinkedHashSet<>(issuesByUC.keySet());
+
+        // ── UCs with structured template (those that have issues = analyzed in detail) ──
+        if (!ucsWithIssues.isEmpty()) {
+            sb.append("\\subsection{Use Cases with Structured Template}\n\n");
+
+            for (String ucId : allUCs) {
+                List<AuditIssue> ucIssues = issuesByUC.getOrDefault(ucId, List.of());
+                if (ucIssues.isEmpty()) continue;
+
+                String ucName = findUcName(report, ucId);
+                String heading = ucName.isBlank() ? ucId : "%s --- %s".formatted(ucId, ucName);
+
+                // Render UC template as centered table
+                sb.append("\\begin{center}\n");
+                sb.append("\\hypertarget{uc:%s}{}\n".formatted(ucId));
+                sb.append("\\begin{tabular}{l >{\\RaggedRight\\arraybackslash}p{10cm}}\n");
+                sb.append("\\toprule\n");
+                sb.append("\\multicolumn{2}{l}{\\textbf{%s}} \\\\\n".formatted(escapeLatex(heading)));
+                sb.append("\\bottomrule\n");
+                sb.append("\\end{tabular}\n");
+                sb.append("\\end{center}\n\n");
+
+                // Issues below the table
+                sb.append(buildUcIssueList(ucIssues));
+            }
+        }
+
+        // ── UCs without structured template ──
+        List<String> ucsWithoutTemplate = allUCs.stream()
+                .filter(uc -> !ucsWithIssues.contains(uc))
+                .toList();
+
+        if (!ucsWithoutTemplate.isEmpty()) {
+            sb.append("\\subsection{Use Cases without Structured Template}\n");
+            sb.append("The following use cases are referenced in diagrams or narrative but lack ");
+            sb.append("a formal template description. A missing template does not necessarily ");
+            sb.append("indicate an error if the UC is sufficiently simple.\n\n");
+            sb.append("\\begin{itemize}[nosep]\n");
+            for (String ucId : ucsWithoutTemplate) {
+                String ucName = findUcName(report, ucId);
+                String label = ucName.isBlank() ? ucId : "%s --- %s".formatted(ucId, ucName);
+                sb.append("  \\item \\hypertarget{uc:%s}{%s}\n".formatted(ucId, escapeLatex(label)));
+            }
+            sb.append("\\end{itemize}\n\n");
+        }
 
         return sb.toString();
     }
 
     /**
-     * Category detail with Use Case grouping where detectable.
-     * Issues mentioning "UC-N" are grouped under that use case.
+     * Renders a schematic list of issues for a single UC: problem + suggestion.
      */
-    private void buildDetailByCategoryAndUC(StringBuilder sb, AuditReport report) {
-        Map<String, List<AuditIssue>> byCategory = report.issues().stream()
-                .collect(Collectors.groupingBy(
-                        i -> i.category() != null ? i.category() : "Altro",
-                        LinkedHashMap::new,
-                        Collectors.toList()));
+    private String buildUcIssueList(List<AuditIssue> issues) {
+        var sb = new StringBuilder();
+        sb.append("\\begin{description}[style=nextline, leftmargin=1em]\n");
+        for (AuditIssue issue : issues) {
+            String sevBadge = severityBadge(issue.severity());
+            sb.append("  \\item[%s --- %s]\n".formatted(
+                    escapeLatex(issue.id()), sevBadge));
 
-        // Build cross-reference map: issue ID → list of related IDs in same UC
-        Map<String, List<String>> crossRefs = buildCrossReferences(report.issues());
+            // Problem description (schematic)
+            sb.append("  \\textbf{Problem:} %s\n".formatted(
+                    escapeLatex(issue.shortDescription() != null ? issue.shortDescription() : issue.description())));
 
-        for (var entry : byCategory.entrySet()) {
-            String category = entry.getKey();
-            List<AuditIssue> categoryIssues = entry.getValue();
+            // Suggestion
+            if (issue.recommendation() != null && !issue.recommendation().isBlank()) {
+                sb.append("\n  \\textbf{Suggestion:} %s\n".formatted(
+                        escapeLatex(issue.recommendation())));
+            }
+            sb.append("\n");
+        }
+        sb.append("\\end{description}\n\n");
+        return sb.toString();
+    }
 
-            sb.append("\\subsection{%s (%d issues)}\n".formatted(
-                    escapeLatex(category), categoryIssues.size()));
+    /**
+     * Section 5: Testing — strategy overview + additional non-UC test issues.
+     * Missing UC test coverage is shown in the Traceability section.
+     */
+    private String buildTestingSection(AuditReport report, String fullText) {
+        var sb = new StringBuilder();
 
-            // Group by UC within category
-            Map<String, List<AuditIssue>> byUC = new LinkedHashMap<>();
-            List<AuditIssue> noUC = new ArrayList<>();
+        // Generate testing strategy description via LLM
+        String testStrategy = generateTestingStrategyOverview(fullText);
+        sb.append("\\subsection{Testing Strategy}\n");
+        sb.append(sanitizeLlmLatex(testStrategy));
+        sb.append("\n\n");
 
-            for (AuditIssue issue : categoryIssues) {
-                String uc = extractUC(issue);
-                if (uc != null) {
-                    byUC.computeIfAbsent(uc, k -> new ArrayList<>()).add(issue);
+        // Additional test issues from TestAuditorAgent (not UC-specific)
+        List<AuditIssue> testIssues = report.issues().stream()
+                .filter(i -> "Testing".equalsIgnoreCase(i.category()))
+                .filter(i -> extractAllUCs(i).isEmpty())
+                .toList();
+
+        if (!testIssues.isEmpty()) {
+            sb.append("\\subsection{Additional Testing Issues}\n\n");
+            sb.append("\\begin{description}[style=nextline, leftmargin=1em]\n");
+            for (AuditIssue issue : testIssues) {
+                String sevBadge = severityBadge(issue.severity());
+                sb.append("  \\item[%s --- %s --- \\hypertarget{tst:%s}{}%s]\n".formatted(
+                        sevBadge, escapeLatex(issue.id()), issue.id(),
+                        issue.shortDescription() != null ? " " + escapeLatex(issue.shortDescription()) : ""));
+
+                sb.append("  \\textbf{Problem:} %s\n".formatted(
+                        escapeLatex(issue.description())));
+
+                if (issue.recommendation() != null && !issue.recommendation().isBlank()) {
+                    sb.append("\n  \\textbf{Suggestion:} %s\n".formatted(
+                            escapeLatex(issue.recommendation())));
+                }
+                sb.append("\n");
+            }
+            sb.append("\\end{description}\n\n");
+        }
+
+        return sb.toString();
+    }
+
+    /**
+     * Section 6: Traceability Analysis — requirement-based table mapping
+     * Requirement → UC → Design → Test. UCs without a parent requirement
+     * are listed separately at the bottom.
+     */
+    private String buildTraceabilitySection(AuditReport report) {
+        var sb = new StringBuilder();
+
+        if (report.traceabilityMatrix() == null || report.traceabilityMatrix().isEmpty()) {
+            sb.append("No traceability data was extracted from the document.\n\n");
+            return sb.toString();
+        }
+
+        List<TraceabilityEntry> entries = report.traceabilityMatrix();
+
+        sb.append("This section maps each requirement to its use cases, design references, ");
+        sb.append("and test coverage.\n\n");
+
+        // Group by requirementId (preserve order)
+        Map<String, List<TraceabilityEntry>> byReq = new LinkedHashMap<>();
+        List<TraceabilityEntry> orphanUCs = new ArrayList<>();
+
+        for (TraceabilityEntry e : entries) {
+            if (e.requirementId() != null && !e.requirementId().isBlank()) {
+                byReq.computeIfAbsent(e.requirementId(), k -> new ArrayList<>()).add(e);
+            } else {
+                orphanUCs.add(e);
+            }
+        }
+
+        // Build table
+        sb.append("\\begin{center}\n");
+        sb.append("\\begin{longtable}{l l c c}\n");
+        sb.append("\\toprule\n");
+        sb.append("\\textbf{Requirement} & \\textbf{UC} & \\textbf{Design} & \\textbf{Test} \\\\\n");
+        sb.append("\\midrule\n");
+        sb.append("\\endhead\n\n");
+
+        // Entries grouped by requirement
+        for (var entry : byReq.entrySet()) {
+            String reqId = entry.getKey();
+            List<TraceabilityEntry> reqEntries = entry.getValue();
+
+            boolean first = true;
+            for (TraceabilityEntry e : reqEntries) {
+                String reqCol = first ? "\\hyperlink{req:%s}{%s}".formatted(reqId, escapeLatex(reqId)) : "";
+                first = false;
+
+                if (e.useCaseId() != null && !e.useCaseId().isBlank()) {
+                    sb.append("%s & \\hyperlink{uc:%s}{%s} & %s & %s \\\\\n".formatted(
+                            reqCol,
+                            e.useCaseId(), e.useCaseId(),
+                            e.hasDesign() ? "\\ok" : "\\nok",
+                            e.hasTest() ? "\\ok" : "\\nok"));
                 } else {
-                    noUC.add(issue);
+                    // Requirement with NO UC
+                    sb.append("%s & --- & --- & --- \\\\\n".formatted(reqCol));
                 }
             }
+            sb.append("\\midrule\n");
+        }
 
-            // Render UC groups
-            for (var ucEntry : byUC.entrySet()) {
-                sb.append("\\subsubsection*{%s}\n".formatted(escapeLatex(ucEntry.getKey())));
-                for (AuditIssue issue : ucEntry.getValue()) {
-                    sb.append(buildIssueBlock(issue, crossRefs));
-                }
-            }
+        // Orphan UCs (no parent requirement)
+        if (!orphanUCs.isEmpty()) {
+            sb.append("\\midrule\n");
+            sb.append("\\multicolumn{4}{l}{\\textit{Use cases without a parent requirement:}} \\\\\n");
+            sb.append("\\midrule\n");
 
-            // Render ungrouped
-            if (!noUC.isEmpty()) {
-                if (!byUC.isEmpty()) {
-                    sb.append("\\subsubsection*{General Issues}\n");
-                }
-                for (AuditIssue issue : noUC) {
-                    sb.append(buildIssueBlock(issue, crossRefs));
+            for (TraceabilityEntry e : orphanUCs) {
+                if (e.useCaseId() != null && !e.useCaseId().isBlank()) {
+                    String ucName = e.useCaseName() != null && !e.useCaseName().isBlank()
+                            ? " (%s)".formatted(escapeLatex(e.useCaseName())) : "";
+                    sb.append("--- & \\hyperlink{uc:%s}{%s}%s & %s & %s \\\\\n".formatted(
+                            e.useCaseId(), e.useCaseId(), ucName,
+                            e.hasDesign() ? "\\ok" : "\\nok",
+                            e.hasTest() ? "\\ok" : "\\nok"));
                 }
             }
+        }
+
+        sb.append("\\bottomrule\n");
+        sb.append("\\end{longtable}\n");
+        sb.append("\\end{center}\n\n");
+
+        // Summary statistics
+        long totalReqs = byReq.size();
+        long reqsWithUC = byReq.entrySet().stream()
+                .filter(e -> e.getValue().stream()
+                        .anyMatch(t -> t.useCaseId() != null && !t.useCaseId().isBlank()))
+                .count();
+        long totalUCEntries = entries.stream()
+                .filter(e -> e.useCaseId() != null && !e.useCaseId().isBlank())
+                .count();
+        long fullyCovered = entries.stream()
+                .filter(e -> e.useCaseId() != null && !e.useCaseId().isBlank()
+                        && e.hasDesign() && e.hasTest())
+                .count();
+        long missingTest = entries.stream()
+                .filter(e -> e.useCaseId() != null && !e.useCaseId().isBlank() && !e.hasTest())
+                .count();
+
+        sb.append("\\textbf{Summary:} Of %d requirements, %d are linked to UCs, %d have no UC. "
+                .formatted(totalReqs, reqsWithUC, totalReqs - reqsWithUC));
+        sb.append("Of %d UCs, %d have full coverage (design + test), %d lack test coverage"
+                .formatted(totalUCEntries, fullyCovered, missingTest));
+        if (!orphanUCs.isEmpty()) {
+            sb.append(", %d have no parent requirement".formatted(orphanUCs.size()));
+        }
+        sb.append(".\n\n");
+
+        // Suggestion
+        sb.append("\\paragraph{Suggestion:} Prioritize adding tests for core operations, ");
+        sb.append("then address any requirements without associated use cases.\n\n");
+
+        return sb.toString();
+    }
+
+    /**
+     * Generates a brief overview of the testing strategy from the document.
+     */
+    private String generateTestingStrategyOverview(String fullText) {
+        String systemPrompt = """
+            You are a Software Engineering expert. Analyze the document and describe
+            the TESTING STRATEGY used by the student.
+            Generate the output directly as valid LaTeX code. Write in ENGLISH.
+            
+            Describe:
+            - What types of tests are present (unit, integration, system, acceptance)?
+            - What testing frameworks/tools are used?
+            - What is the coverage approach?
+            - Are boundary conditions and error cases tested?
+            
+            OUTPUT FORMAT (pure LaTeX):
+            - Use normal paragraphs and \\begin{itemize} for lists
+            - Maximum 200 words
+            - Escape correctly: & as \\&, % as \\%, _ as \\_
+            - DO NOT generate \\documentclass, \\begin{document}, \\section
+            - DO NOT use Unicode characters
+            - If the document does not describe testing, state: "The document does not
+              describe a testing strategy."
+            - Use a formal, professional, and objective tone
+            """;
+
+        try {
+            return callLlmWithFallback(systemPrompt,
+                    "Describe the testing strategy in this document:\n\n" + truncateForPrompt(fullText, 30000));
+        } catch (Exception e) {
+            log.warn("Unable to generate testing strategy overview: {}", e.getMessage());
+            return "The testing strategy overview is not available due to an error in automatic generation.";
         }
     }
 
     /**
-     * Extracts the UC reference from an issue (searching for "UC-N" or "UC N" in description/quote).
+     * Generates a brief architecture overview from the document via LLM.
      */
-    private String extractUC(AuditIssue issue) {
+    private String generateArchitectureOverview(String fullText) {
+        String systemPrompt = """
+            You are a Software Engineering expert. Analyze the document and describe
+            the ARCHITECTURE used by the student's project.
+            Generate the output directly as valid LaTeX code. Write in ENGLISH.
+            
+            Describe:
+            - What architectural pattern is used (layered, MVC, microservices, etc.)?
+            - What are the main components/modules?
+            - What technologies/frameworks are used?
+            - How are the components connected?
+            
+            OUTPUT FORMAT (pure LaTeX):
+            - Use normal paragraphs and \\textbf{} for emphasis
+            - Maximum 150 words
+            - Escape correctly: & as \\&, % as \\%, _ as \\_
+            - DO NOT generate \\documentclass, \\begin{document}, \\section
+            - DO NOT use Unicode characters
+            - If the document does not describe an architecture, state: "The document does not
+              describe a system architecture."
+            - Use a formal, professional, and objective tone
+            """;
+
+        try {
+            return callLlmWithFallback(systemPrompt,
+                    "Describe the architecture in this document:\n\n" + truncateForPrompt(fullText, 30000));
+        } catch (Exception e) {
+            log.warn("Unable to generate architecture overview: {}", e.getMessage());
+            return "The architecture overview is not available due to an error in automatic generation.";
+        }
+    }
+
+    /**
+     * Generates a concrete suggestion for improving traceability of a specific UC.
+     */
+    private String buildTraceabilitySuggestion(TraceabilityEntry entry) {
+        if (!entry.hasDesign() && !entry.hasTest()) {
+            return "Add both a design reference (e.g., class diagram, sequence diagram, or component description) "
+                    + "and at least one test case that verifies this use case.";
+        } else if (!entry.hasDesign()) {
+            return "Add a design reference that maps this use case to its implementing components "
+                    + "(e.g., controller, service, DAO classes or a sequence diagram).";
+        } else if (!entry.hasTest()) {
+            return "Add at least one test case (unit or integration) that explicitly verifies "
+                    + "the behavior described in this use case.";
+        }
+        return "";
+    }
+
+    /**
+     * Section 3: Architecture Analysis — LLM description + architecture issues.
+     */
+    private String buildArchitectureSection(AuditReport report, String fullText) {
+        var sb = new StringBuilder();
+
+        // Generate architecture description via LLM
+        String archOverview = generateArchitectureOverview(fullText);
+        sb.append(sanitizeLlmLatex(archOverview));
+        sb.append("\n\n");
+
+        // Architecture issues
+        List<AuditIssue> archIssues = report.issues().stream()
+                .filter(i -> "Architecture".equalsIgnoreCase(i.category()))
+                .toList();
+
+        if (archIssues.isEmpty()) {
+            sb.append("No significant architecture issues were identified.\n\n");
+        } else {
+            sb.append("\\begin{description}[style=nextline, leftmargin=1em]\n");
+            for (AuditIssue issue : archIssues) {
+                String sevBadge = severityBadge(issue.severity());
+                sb.append("  \\item[%s --- %s]\n".formatted(
+                        escapeLatex(issue.id()), sevBadge));
+
+                sb.append("  \\textbf{Problem:} %s\n".formatted(
+                        escapeLatex(issue.shortDescription() != null ? issue.shortDescription() : issue.description())));
+
+                if (issue.recommendation() != null && !issue.recommendation().isBlank()) {
+                    sb.append("\n  \\textbf{Suggestion:} %s\n".formatted(
+                            escapeLatex(issue.recommendation())));
+                }
+                sb.append("\n");
+            }
+            sb.append("\\end{description}\n\n");
+        }
+
+        return sb.toString();
+    }
+
+    /**
+     * Returns a text-based severity badge (no colors, accessible).
+     */
+    private String severityBadge(Severity severity) {
+        return switch (severity) {
+            case HIGH -> "\\fbox{\\textsc{high}}";
+            case MEDIUM -> "\\fbox{\\textsc{medium}}";
+            case LOW -> "\\fbox{\\textsc{low}}";
+        };
+    }
+
+    // ═══════════════════════════════════════════════════
+    // Helpers
+    // ═══════════════════════════════════════════════════
+
+    private String findUcName(AuditReport report, String ucId) {
+        if (report.traceabilityMatrix() == null) return "";
+        return report.traceabilityMatrix().stream()
+                .filter(e -> e.useCaseId().equalsIgnoreCase(ucId))
+                .map(TraceabilityEntry::useCaseName)
+                .findFirst().orElse("");
+    }
+
+    /**
+     * Extracts all UC references from an issue's text fields.
+     */
+    private Set<String> extractAllUCs(AuditIssue issue) {
         String combined = (issue.description() != null ? issue.description() : "") + " "
                 + (issue.quote() != null ? issue.quote() : "") + " "
                 + (issue.recommendation() != null ? issue.recommendation() : "");
 
-        // Pattern: UC-1, UC-2, UC 1, UC1, etc.
+        Set<String> ucs = new LinkedHashSet<>();
         var matcher = java.util.regex.Pattern.compile("(?i)UC[- ]?(\\d+)")
                 .matcher(combined);
-        if (matcher.find()) {
-            return "UC-" + matcher.group(1);
+        while (matcher.find()) {
+            ucs.add("UC-" + matcher.group(1));
         }
-        return null;
+        return ucs;
     }
 
     /**
-     * Builds a cross-reference map: for each issue, the related issues (same UC).
+     * Truncates a verbatim quote to a maximum length, cutting at a sentence boundary if possible.
      */
-    private Map<String, List<String>> buildCrossReferences(List<AuditIssue> issues) {
-        // Map UC → issue IDs
-        Map<String, List<String>> ucToIds = new LinkedHashMap<>();
-        Map<String, String> issueToUC = new HashMap<>();
+    private String truncateQuote(String quote, int maxLen) {
+        if (quote == null || quote.length() <= maxLen) return quote;
 
-        for (AuditIssue issue : issues) {
-            String uc = extractUC(issue);
-            if (uc != null) {
-                ucToIds.computeIfAbsent(uc, k -> new ArrayList<>()).add(issue.id());
-                issueToUC.put(issue.id(), uc);
-            }
+        // Try to cut at a sentence boundary
+        String prefix = quote.substring(0, maxLen);
+        int cutPoint = prefix.lastIndexOf(". ");
+        if (cutPoint > maxLen / 2) {
+            return quote.substring(0, cutPoint + 1) + " [...]";
         }
 
-        // Now for each issue, find other issues with same UC but different ID prefix
-        Map<String, List<String>> crossRefs = new HashMap<>();
-        for (AuditIssue issue : issues) {
-            String uc = issueToUC.get(issue.id());
-            if (uc == null) continue;
-
-            String myPrefix = issue.id().contains("-") ? issue.id().substring(0, issue.id().indexOf('-')) : "";
-            List<String> related = ucToIds.get(uc).stream()
-                    .filter(id -> !id.equals(issue.id()))
-                    .filter(id -> {
-                        String p = id.contains("-") ? id.substring(0, id.indexOf('-')) : "";
-                        return !p.equals(myPrefix); // cross-category references only
-                    })
-                    .toList();
-
-            if (!related.isEmpty()) {
-                crossRefs.put(issue.id(), related);
-            }
+        // Otherwise cut at word boundary
+        int spaceIdx = prefix.lastIndexOf(' ');
+        if (spaceIdx > maxLen / 2) {
+            return quote.substring(0, spaceIdx) + " [...]";
         }
 
-        return crossRefs;
-    }
-
-    /**
-     * LaTeX block for a single issue, with cross-reference, recommendation, and confidence badge.
-     */
-    private String buildIssueBlock(AuditIssue issue, Map<String, List<String>> crossRefs) {
-        String severityLabel = switch (issue.severity()) {
-            case HIGH -> "\\textcolor{highcolor}{HIGH}";
-            case MEDIUM -> "\\textcolor{medcolor}{MEDIUM}";
-            case LOW -> "\\textcolor{lowcolor}{LOW}";
-        };
-
-        // Confidence badge
-        int confPct = (int) Math.round(issue.confidenceScore() * 100);
-        String confColor = confPct >= 80 ? "present" : confPct >= 60 ? "partial" : "absent";
-        String confBadge = "\\textcolor{%s}{[%d\\%%]}".formatted(confColor, confPct);
-
-        var sb = new StringBuilder();
-        sb.append("\\paragraph{%s \\textnormal{--- %s %s --- Page %d}}\n".formatted(
-                escapeLatex(issue.id()), severityLabel, confBadge, issue.pageReference()));
-
-        sb.append("%s\n\n".formatted(escapeLatex(issue.description())));
-
-        sb.append("\\begin{quote}\n");
-        sb.append("\\small\\itshape %s\n".formatted(escapeLatex(issue.quote())));
-        sb.append("\\end{quote}\n\n");
-
-        if (issue.recommendation() != null && !issue.recommendation().isBlank()) {
-            sb.append("\\textbf{Recommendation:} %s\n\n".formatted(
-                    escapeLatex(issue.recommendation())));
-        }
-
-        // Cross-references
-        List<String> refs = crossRefs.get(issue.id());
-        if (refs != null && !refs.isEmpty()) {
-            sb.append("{\\small\\textit{See also: %s}}\n\n".formatted(
-                    refs.stream().map(this::escapeLatex).collect(Collectors.joining(", "))));
-        }
-
-        return sb.toString();
-    }
-
-    /**
-     * Priority recommendations — HIGH only, one line each with ID and action.
-     */
-    private String buildPriorityRecommendations(AuditReport report) {
-        List<AuditIssue> highIssues = report.issues().stream()
-                .filter(i -> i.severity() == Severity.HIGH)
-                .toList();
-
-        if (highIssues.isEmpty()) {
-            return "No high-severity issues were found. " +
-                    "Review the MEDIUM severity findings for further improvements.\n\n";
-        }
-
-        var sb = new StringBuilder();
-        sb.append("The following actions are considered priority:\n\n");
-        sb.append("\\begin{enumerate}\n");
-
-        for (AuditIssue issue : highIssues) {
-            // One-line concise recommendation with ID reference
-            String rec = issue.recommendation() != null && !issue.recommendation().isBlank()
-                    ? truncateRecommendation(issue.recommendation(), 150)
-                    : truncateRecommendation(issue.description(), 150);
-            sb.append("  \\item \\textbf{%s} (p.~%d): %s\n".formatted(
-                    escapeLatex(issue.id()), issue.pageReference(), escapeLatex(rec)));
-        }
-
-        sb.append("\\end{enumerate}\n\n");
-        return sb.toString();
-    }
-
-    /**
-     * Truncates a recommendation to maxLen characters, cutting at the nearest sentence end.
-     */
-    private String truncateRecommendation(String text, int maxLen) {
-        if (text == null || text.length() <= maxLen) return text != null ? text : "";
-        // Try to cut at last period before maxLen
-        int lastPeriod = text.lastIndexOf('.', maxLen);
-        if (lastPeriod > maxLen / 2) {
-            return text.substring(0, lastPeriod + 1);
-        }
-        return text.substring(0, maxLen) + "...";
+        return quote.substring(0, maxLen) + " [...]";
     }
 
     // ═══════════════════════════════════════════════════
-    // New section builders (Traceability, Glossary, Layout)
+    // Utility
     // ═══════════════════════════════════════════════════
 
-    /**
-     * Sanitizes LLM-generated LaTeX output: removes dangerous commands
-     * like \documentclass, \begin{document}, \end{document}, \input, \include.
-     * Keeps all other LaTeX intact.
-     */
     private String sanitizeLlmLatex(String llmOutput) {
         if (llmOutput == null || llmOutput.isBlank()) return "";
         String cleaned = llmOutput;
-        // Remove document-level commands that would break our template
         cleaned = cleaned.replaceAll("(?m)^\\s*\\\\documentclass.*$", "");
         cleaned = cleaned.replaceAll("(?m)^\\s*\\\\usepackage.*$", "");
         cleaned = cleaned.replaceAll("(?m)^\\s*\\\\begin\\{document\\}.*$", "");
         cleaned = cleaned.replaceAll("(?m)^\\s*\\\\end\\{document\\}.*$", "");
         cleaned = cleaned.replaceAll("(?m)^\\s*\\\\maketitle.*$", "");
         cleaned = cleaned.replaceAll("(?m)^\\s*\\\\tableofcontents.*$", "");
-        // Remove dangerous file inclusion commands
         cleaned = cleaned.replaceAll("\\\\input\\{[^}]*\\}", "");
         cleaned = cleaned.replaceAll("\\\\include\\{[^}]*\\}", "");
-        // Remove markdown code fences that LLM might wrap output in
         cleaned = cleaned.replaceAll("(?m)^```(?:latex|tex)?\\s*$", "");
         cleaned = cleaned.replaceAll("(?m)^```\\s*$", "");
         return cleaned.strip();
     }
-
-    /**
-     * Formats the document context with mini-subsections for readability.
-     * Recognizes headings in LLM text and converts them to \subsection*.
-     * NOTE: currently unused (LLM now generates LaTeX directly), retained for future use.
-     */
-    @SuppressWarnings("unused")
-    private String formatContextSection(String rawContext) {
-        if (rawContext == null || rawContext.isBlank()) return "";
-
-        var sb = new StringBuilder();
-        String[] lines = rawContext.split("\\n");
-
-        for (String line : lines) {
-            String trimmed = line.trim();
-            if (trimmed.isEmpty()) {
-                sb.append("\n");
-                continue;
-            }
-            // Detect section headers (all caps or ending with colon)
-            if (isSectionHeader(trimmed)) {
-                String headerText = trimmed.replaceAll(":$", "").trim();
-                sb.append("\n\\subsection*{%s}\n".formatted(escapeLatex(headerText)));
-            } else {
-                sb.append(escapeLatexBlock(trimmed)).append("\n");
-            }
-        }
-        return sb.toString();
-    }
-
-    private boolean isSectionHeader(String line) {
-        // Common headers from the LLM context prompt
-        String upper = line.toUpperCase();
-        return upper.startsWith("OBJECTIVE OF THE PROJECT") ||
-               upper.startsWith("USE CASES") || upper.startsWith("USE CASES") ||
-               upper.startsWith("FUNCTIONAL REQUIREMENTS") ||
-               upper.startsWith("NON-FUNCTIONAL REQUIREMENTS") ||
-               upper.startsWith("ARCHITECTURE") ||
-               upper.startsWith("TESTING STRATEGY") ||
-               upper.startsWith("TECHNOLOGIES") ||
-               (line.endsWith(":") && line.length() < 60 && !line.contains(".") && !line.startsWith("-"));
-    }
-
-    /**
-     * Formats the executive summary with an initial summary box with metrics,
-     * followed by the LLM text.
-     */
-    private String formatSynthesisSection(String summary, AuditReport report) {
-        var sb = new StringBuilder();
-
-        // Mini-dashboard box at top
-        long high = report.severityDistribution().getOrDefault(Severity.HIGH, 0L);
-        long med = report.severityDistribution().getOrDefault(Severity.MEDIUM, 0L);
-        long low = report.severityDistribution().getOrDefault(Severity.LOW, 0L);
-
-        sb.append("\\noindent\\fbox{\\parbox{\\dimexpr\\textwidth-2\\fboxsep-2\\fboxrule}{%\n");
-        sb.append("\\centering\\textbf{Quick Overview} \\\\[0.3em]\n");
-        sb.append("Total issues: \\textbf{%d} \\quad --- \\quad ".formatted(report.totalIssues()));
-        sb.append("\\textcolor{highcolor}{HIGH: \\textbf{%d}} \\quad ".formatted(high));
-        sb.append("\\textcolor{medcolor}{MEDIUM: \\textbf{%d}} \\quad ".formatted(med));
-        sb.append("\\textcolor{lowcolor}{LOW: \\textbf{%d}}\n".formatted(low));
-
-        // Average confidence if available
-        if (!report.issues().isEmpty()) {
-            double avgConf = report.issues().stream()
-                    .mapToDouble(AuditIssue::confidenceScore).average().orElse(0.0);
-            sb.append("\\\\[0.2em] Average confidence: \\textbf{%d\\%%}\n".formatted(
-                    (int) Math.round(avgConf * 100)));
-        }
-        sb.append("}}\n\\vspace{0.5em}\n\n");
-
-        // LLM narrative text (LaTeX diretto)
-        sb.append("\\begin{small}\n");
-        sb.append(sanitizeLlmLatex(summary));
-        sb.append("\n\\end{small}\n");
-
-        return sb.toString();
-    }
-
-    /**
-     * Traceability matrix UC → Design → Test, with ✓/✗ indicators and gaps.
-     */
-    private String buildTraceabilityMatrix(List<TraceabilityEntry> entries) {
-        var sb = new StringBuilder();
-
-        long fullyCovered = entries.stream().filter(e -> e.hasDesign() && e.hasTest()).count();
-        long missingDesign = entries.stream().filter(e -> !e.hasDesign()).count();
-        long missingTest = entries.stream().filter(e -> !e.hasTest()).count();
-
-        sb.append("Of %d traced use cases: \\textcolor{present}{%d fully covered}, ".formatted(
-                entries.size(), fullyCovered));
-        sb.append("\\textcolor{absent}{%d without design, %d without test}.\n\n".formatted(missingDesign, missingTest));
-
-        sb.append("\\begin{longtable}{p{1.8cm} >{\\RaggedRight\\arraybackslash\\hspace{0pt}}p{4.5cm} c c >{\\RaggedRight\\arraybackslash\\hspace{0pt}}p{5cm}}\n");
-        sb.append("\\toprule\n");
-        sb.append("\\textbf{ID} & \\textbf{Use Case} & \\textbf{Design} & \\textbf{Test} & \\textbf{Gap} \\\\\n");
-        sb.append("\\midrule\n");
-        sb.append("\\endhead\n");
-
-        for (TraceabilityEntry e : entries) {
-            String designMark = e.hasDesign()
-                    ? "\\textcolor{present}{$\\checkmark$}"
-                    : "\\textcolor{absent}{$\\times$}";
-            String testMark = e.hasTest()
-                    ? "\\textcolor{present}{$\\checkmark$}"
-                    : "\\textcolor{absent}{$\\times$}";
-            String gapText = e.gap() != null && !e.gap().isBlank()
-                    ? escapeLatex(truncateRecommendation(e.gap(), 120))
-                    : "---";
-
-            sb.append("%s & %s & %s & %s & {\\small %s} \\\\\n".formatted(
-                    escapeLatex(e.useCaseId()),
-                    escapeLatex(e.useCaseName()),
-                    designMark,
-                    testMark,
-                    gapText));
-        }
-
-        sb.append("\\bottomrule\n");
-        sb.append("\\end{longtable}\n\n");
-
-        return sb.toString();
-    }
-
-    /**
-     * Terminological consistency section — glossary errors / inconsistent terminology.
-     */
-    private String buildGlossaryIssuesSection(List<GlossaryIssue> issues) {
-        var sb = new StringBuilder();
-
-        long major = issues.stream().filter(g -> "MAJOR".equalsIgnoreCase(g.severity())).count();
-        long minor = issues.size() - major;
-        sb.append("Found \\textbf{%d} terminological inconsistencies (%d major, %d minor).\n\n"
-                .formatted(issues.size(), major, minor));
-
-        sb.append("\\begin{longtable}{>{\\RaggedRight\\arraybackslash\\hspace{0pt}}p{3cm} >{\\RaggedRight\\arraybackslash\\hspace{0pt}}p{4cm} c >{\\RaggedRight\\arraybackslash\\hspace{0pt}}p{5cm}}\n");
-        sb.append("\\toprule\n");
-        sb.append("\\textbf{Group} & \\textbf{Variants found} & \\textbf{Severity} & \\textbf{Suggestion} \\\\\n");
-        sb.append("\\midrule\n");
-        sb.append("\\endhead\n");
-
-        for (GlossaryIssue g : issues) {
-            String sevColor = "MAJOR".equalsIgnoreCase(g.severity()) ? "highcolor" : "medcolor";
-            String variants = g.variants() != null ? escapeLatex(g.variants()) : "";
-
-            sb.append("%s & {\\small %s} & \\textcolor{%s}{%s} & {\\small %s} \\\\\n".formatted(
-                    escapeLatex(g.termGroup()),
-                    variants,
-                    sevColor,
-                    escapeLatex(g.severity()),
-                    escapeLatex(g.suggestion() != null ? g.suggestion() : "")));
-        }
-
-        sb.append("\\bottomrule\n");
-        sb.append("\\end{longtable}\n\n");
-
-        return sb.toString();
-    }
-
-    // ═══════════════════════════════════════════════════
-    // Utility
-    // ═══════════════════════════════════════════════════
 
     private String truncateForPrompt(String text, int maxChars) {
         if (text.length() <= maxChars) return text;
@@ -963,25 +1018,21 @@ public class LatexReportService {
         return text.substring(0, maxChars) + "\n\n[... text truncated ...]";
     }
 
+    private String truncateText(String text, int maxLen) {
+        if (text == null) return "";
+        if (text.length() <= maxLen) return text;
+        return text.substring(0, maxLen - 3) + "...";
+    }
+
     /**
-     * Escapes LaTeX special characters for text INSIDE commands (\textit, \textbf, etc.).
-     * Collapses newlines into spaces to avoid "Paragraph ended before \text@command".
+     * Escapes LaTeX special characters for text INSIDE commands.
+     * Collapses newlines into spaces.
      */
     private String escapeLatex(String text) {
         if (text == null) return "";
         String sanitized = text.replaceAll("\\r\\n", "\n")
                                .replaceAll("\\n{2,}", " ")
                                .replaceAll("\\n", " ");
-        return escapeSpecialChars(sanitized);
-    }
-
-    /**
-     * Escapes LaTeX special characters PRESERVING paragraphs.
-     * For standalone text (not inside commands).
-     */
-    private String escapeLatexBlock(String text) {
-        if (text == null) return "";
-        String sanitized = text.replaceAll("\\r\\n", "\n");
         return escapeSpecialChars(sanitized);
     }
 

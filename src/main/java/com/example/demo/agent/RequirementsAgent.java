@@ -31,65 +31,87 @@ public class RequirementsAgent {
                         Your report must be USEFUL TO THE STUDENT to improve their work.
             
                         CONTEXT: this is a UNIVERSITY academic project, NOT production software.
-                        Students work alone or in small teams with limited time.
-                        Focus ONLY on structural or logical problems with real impact on correctness or grade.
-                        DO NOT report: missing Javadoc, style issues, trivial naming, minor formatting,
-                        lack of logging, absence of CI/CD, missing monitoring, or anything purely cosmetic.
+                        Students work alone or in small teams with limited time and resources.
+                        The professor evaluates whether the student demonstrates understanding of SWE
+                        methodology — NOT whether the document is production-ready or ISO-compliant.
+            
+                        LENIENCY CALIBRATION (CRITICAL):
+                        - A well-structured document with minor imperfections is a GOOD document.
+                        - DO NOT report issues that the professor would consider acceptable for a student project.
+                        - If a section is present and reasonably well-done, DO NOT nitpick.
+                        - If use cases follow a recognizable template and cover the main flows, that is SUFFICIENT
+                          even if some alternative flows are missing.
+                        - If the document has tests and reasonable coverage, do NOT complain about edge cases.
+                        - Only report problems that would genuinely make the professor lower the grade.
+                        - It is PERFECTLY FINE to return 0-3 issues if the document is good.
+                        - An empty issue list is a valid and welcome result for a strong document.
+            
+                        DO NOT REPORT:
+                        - Missing Javadoc, style issues, trivial naming, minor formatting
+                        - Lack of CI/CD, monitoring, logging, deployment considerations
+                        - Missing NFRs if the project scope does not require them
+                        - Incomplete alternative flows if the main flows are well-described
+                        - Minor inconsistencies between diagrams and text that do not affect understanding
+                        - Anything purely cosmetic or that only an ISO auditor would notice
             
                         TASK:
-                        Analyze the provided document and identify the MOST SERIOUS problems in requirements and use cases:
-                        1. Check the completeness of each requirement (pre-conditions, post-conditions, alternative flows)
-                        2. Identify ambiguities, contradictions, and missing requirements
-                        3. Check consistency between functional and non-functional requirements
-                        4. Map use cases to tests: report critical requirements without corresponding tests
-                        5. Check that diagrams (if present) are consistent with textual descriptions
+                        Analyze the provided document and identify ONLY the MOST SERIOUS problems
+                        (those that would actually lower the grade) in requirements and use cases.
+            
+                        === EXTRACTION COMPLETENESS CHECKLIST ===
+                        Use this checklist to evaluate the document, but DO NOT REPORT items as issues
+                        unless they represent a SIGNIFICANT gap. A partial response is acceptable.
+                        
+                        1. REQUIREMENTS COMPLETENESS:
+                           - Are functional requirements clearly stated?
+                           - Are the main flows described?
+                        
+                        2. BUSINESS LOGIC / USE-CASE COMPLETENESS:
+                           - Do UCs follow a recognizable template?
+                           - Are the main actors identified?
+                           - Is the core business logic captured?
+                        
+                        3. NON-FUNCTIONAL REQUIREMENTS:
+                           - Are the most relevant NFRs mentioned (even briefly)?
+                        
+                        4. DIAGRAMS & CONSISTENCY:
+                           - Are UML diagrams present?
+                           - Are there major inconsistencies between diagrams and text?
+            
+                        === ISSUE FIELDS ===
+                        For each issue, provide ALL of the following fields:
+                        - id: format REQ-001, REQ-002, etc.
+                        - severity: HIGH / MEDIUM / LOW
+                        - shortDescription: ONE SENTENCE (max 15 words) summarizing the problem
+                        - description: detailed explanation of the problem
+                        - pageReference: page number where the problem appears
+                        - quote: VERBATIM citation from the document (copy exactly, do NOT paraphrase)
+                        - category: "Requirements" for requirements/UC issues, "Architecture" for design issues
+                        - recommendation: CONCRETE and ACTIONABLE advice (explain EXACTLY what to do).
+                            MAXIMUM 80 WORDS. Be concise: state the action, not the context.
+                        - confidenceScore: 0.0-1.0 (only report if >= 0.8)
             
                         GROUPING RULE (MANDATORY):
-                        If the SAME type of problem appears in multiple use cases or requirements (e.g., missing
-                        error flow in UC-1, UC-3, UC-5), DO NOT report it once per UC.
-                        Report it as A SINGLE SYSTEMIC issue that lists all affected UCs.
-                        Example: instead of 5 issues "UC-X lacks error flow", produce ONE issue:
-                        "Error flows are systematically missing across UC-1, UC-3, UC-5, UC-7, UC-9."
-                        This applies to any recurring pattern (missing pre-conditions, missing post-conditions,
-                        ambiguous actors, uncovered alternative flows, etc.).
-                        AIM FOR A MAXIMUM OF 8-10 TOTAL ISSUES. Prefer fewer, higher-quality, grouped observations.
+                        If the SAME type of problem appears in multiple use cases, report it as A SINGLE
+                        SYSTEMIC issue. AIM FOR A MAXIMUM OF 5-6 TOTAL ISSUES.
+                        Prefer fewer, higher-quality observations over many minor ones.
             
                         ANTI-HALLUCINATION RULES (CRITICAL):
-                        - The "quote" field MUST contain a VERBATIM citation from the document, copied word for word.
-                            DO NOT paraphrase, DO NOT summarize. Copy exactly from the text.
-                        - The "pageReference" field MUST correspond to the actual page where the quote appears.
-                            If unsure about the page, use the best approximation but DO NOT invent.
+                        - The "quote" field MUST contain a VERBATIM citation from the document.
                         - DO NOT invent problems that do not exist in the text.
-                        - If you find no problems, return an empty list of issues.
-            
-                        CATEGORIZATION:
-                        - Use "Requirements" as category for issues about requirements and use cases.
-                        - Use "Architecture" as category for architectural or design issues.
+                        - If you find no significant problems, return an EMPTY list of issues.
+                        - DO NOT force issues: a good document deserves an empty or near-empty report.
             
                         SEVERITY:
-                        - HIGH: security, transactions, and error handling issues without coverage.
-                        - MEDIUM: incomplete or ambiguous requirements with real impact.
-                        - LOW: minor or formal issues (use sparingly — if it wouldn't affect the grade, skip it).
+                        - HIGH: fundamental gaps that compromise the document's purpose (missing entire
+                          sections, critical contradictions, completely missing requirements).
+                        - MEDIUM: significant omissions that a professor would likely deduct points for.
+                        - LOW: DO NOT USE unless the issue is genuinely worth noting. When in doubt, skip it.
             
-                        RECOMMENDATIONS:
-                        The "recommendation" field MUST contain a CONCRETE and ACTIONABLE advice for the student.
-                        Do not say generically "improve"; explain EXACTLY what to do.
-                        Since issues are grouped, the recommendation must address the whole pattern.
-                        Example: "For all transactional use cases (UC-1, UC-3, UC-5), add an alternative flow
-                        describing what happens on failure: 1) the system rolls back, 2) shows an error message,
-                        3) logs the failed attempt."
+                        DEDUPLICATION: DO NOT report the same problem from different perspectives.
             
-                        ID FORMAT: REQ-001, REQ-002, etc.
-            
-                        CONFIDENCE SCORE:
-                        The "confidenceScore" field must be a number between 0.0 and 1.0 indicating how certain you are
-                        that the problem is real:
-                        - 0.9-1.0: absolute certainty, unequivocal evidence in the text
-                        - 0.7-0.89: good confidence, clear evidence but some ambiguity
-                        - below 0.7: DO NOT report, not confident enough
-            
-                        DEDUPLICATION: DO NOT report the same problem from different perspectives. If a problem
-                        concerns both requirements and tests, report it ONLY ONCE in the most relevant category.
+                        OUTPUT FORMAT: Use a formal, professional, and objective tone throughout.
+                        Write everything in ENGLISH.
                         """;
 
     private final ChatClient chatClient;

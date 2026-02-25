@@ -1,0 +1,40 @@
+\babel@toc {english}{}\relax 
+\contentsline {section}{\numberline {1}Summary}{2}{}%
+\contentsline {subsection}{\numberline {1.1}Proposal A --- Document Overview only (clean text)}{2}{}%
+\contentsline {subsection}{\numberline {1.1}Proposal B --- Document Overview + inline stats}{2}{}%
+\contentsline {subsection}{\numberline {1.1}Proposal C --- Metrics box + Document Overview}{2}{}%
+\contentsline {section}{\numberline {2}Architecture Analysis (new section)}{3}{}%
+\contentsline {subsection}{\numberline {2.1}Proposal A --- LLM description + description list}{3}{}%
+\contentsline {subsection}{\numberline {2.1}Proposal B --- LLM description + itemize compact}{3}{}%
+\contentsline {subsection}{\numberline {2.1}Proposal C --- LLM description + compact table + details}{3}{}%
+\contentsline {paragraph}{\nonumberline ARCH-001}{4}{}%
+\contentsline {paragraph}{\nonumberline ARCH-002}{4}{}%
+\contentsline {section}{\numberline {3}Use Case Analysis}{5}{}%
+\contentsline {subsection}{\numberline {3.1}Proposal A --- Only UCs with problems, others listed at end}{5}{}%
+\contentsline {paragraph}{\nonumberline UC-2 --- Effettua prestito}{5}{}%
+\contentsline {paragraph}{\nonumberline UC-3 --- Aggiunge libro}{5}{}%
+\contentsline {subsection}{\numberline {3.1}Proposal B --- Split with/without template, problems inline}{5}{}%
+\contentsline {paragraph}{\nonumberline UC-1 --- Registrazione}{5}{}%
+\contentsline {paragraph}{\nonumberline UC-2 --- Effettua prestito}{5}{}%
+\contentsline {paragraph}{\nonumberline UC-3 --- Aggiunge libro}{5}{}%
+\contentsline {paragraph}{\nonumberline UC-4 --- Conclude Prestito}{5}{}%
+\contentsline {subsection}{\numberline {3.1}Proposal C --- Only UCs with problems, compact list at end}{6}{}%
+\contentsline {section}{\numberline {4}Testing Analysis}{7}{}%
+\contentsline {subsection}{\numberline {4.1}Proposal A --- Strategy description + list of uncovered UCs}{7}{}%
+\contentsline {subsection}{\numberline {4.1}Proposal B --- Strategy + compact mapping table}{7}{}%
+\contentsline {subsection}{\numberline {4.1}Proposal C --- Strategy + single grouped issue}{8}{}%
+\contentsline {section}{\numberline {5}Traceability Analysis}{9}{}%
+\contentsline {subsection}{\numberline {5.1}Proposal A --- Description list with status + problem/suggestion}{9}{}%
+\contentsline {subsection}{\numberline {5.1}Proposal B --- Compact table ($\mbox {$\mathsurround \z@ \mathchar "458$}$/$\times $) + gap summary}{9}{}%
+\contentsline {subsection}{\numberline {5.1}Proposal C --- Grouped by gap type}{10}{}%
+\contentsline {section}{\numberline {6}Missing Features}{12}{}%
+\contentsline {subsection}{\numberline {6.1}Proposal A --- Description list with Problem/Suggestion}{12}{}%
+\contentsline {subsection}{\numberline {6.1}Proposal B --- Summary table + details below}{12}{}%
+\contentsline {paragraph}{\nonumberline Unit testing:}{12}{}%
+\contentsline {paragraph}{\nonumberline Use Cases:}{12}{}%
+\contentsline {subsection}{\numberline {6.1}Proposal C --- Compact itemize}{12}{}%
+\contentsline {section}{\numberline {7}Action Plan}{14}{}%
+\contentsline {subsection}{\numberline {7.1}Proposal A --- Table with priority, effort, impact}{14}{}%
+\contentsline {subsection}{\numberline {7.1}Proposal B --- Numbered list (no table)}{14}{}%
+\contentsline {subsection}{\numberline {7.1}Proposal C --- Remove action plan entirely}{14}{}%
+\providecommand \tocbasic@end@toc@file {}\tocbasic@end@toc@file 

@@ -42,9 +42,12 @@ public class FeatureCheckAgent {
             - matchedItems = number of satisfied items
             - totalItems = total number of items in the checklist
             - evidence = one or two sentences explaining what you found (or what is missing). NO LaTeX commands.
+              For PARTIAL or ABSENT features, provide a DETAILED explanation of what is missing
+              and WHY it matters for the project quality.
             - DO NOT invent evidence. If you don't find something, state it clearly.
             - Write everything in ENGLISH. Do NOT translate document-specific feature names, use case
               identifiers, class names, or any term exactly as it appears in the analyzed document.
+            - Use a formal, professional, and objective tone.
             """;
 
     private final ChatClient chatClient;
@@ -127,10 +130,5 @@ public class FeatureCheckAgent {
             log.error("FeatureCheckAgent: error during feature check", e);
             return List.of();
         }
-    }
-
-    private String truncate(String text, int maxChars) {
-        if (text.length() <= maxChars) return text;
-        return text.substring(0, maxChars) + "\n[... truncated ...]";
     }
 }

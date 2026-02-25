@@ -28,27 +28,36 @@ public class TraceabilityMatrixAgent {
             
                         TASK:
                         Analyze the document and build a TRACEABILITY MATRIX that maps:
-                        - Use Case / Requirements → Design (classes, components, patterns) → Test Case
+                        Requirement → Use Case → Design (classes, components, patterns) → Test Case
             
-                        For each Use Case or Functional Requirement present in the document:
+                        For each Use Case present in the document:
                         1. Identify its ID and name (e.g., UC-1 - User Registration)
-                        2. Check if the document contains a related design/architecture description
+                        2. Identify the PARENT REQUIREMENT that this UC implements (e.g., RF-1, REQ-1, R1).
+                           Use the requirement ID and name as they appear in the document.
+                           If the UC has no parent requirement, set requirementId and requirementName to null.
+                        3. Check if the document contains a related design/architecture description
                              (e.g., class, controller, DAO, sequence diagram implementing it)
-                        3. Check if the document contains a test case verifying that requirement
-                        4. If design OR test is missing, report the gap
+                        4. Check if the document contains a test case verifying that use case
+                        5. If design OR test is missing, report the gap
+            
+                        ALSO: if a REQUIREMENT exists in the document but has NO associated Use Case,
+                        create an entry with the requirement's ID and name, useCaseId=null, useCaseName=null,
+                        hasDesign=false, hasTest=false, and gap describing the missing UC.
             
                         RULES:
-                        - List ALL Use Cases / requirements found in the document, even those well covered
+                        - List ALL Use Cases AND all requirements found in the document
+                        - requirementId: the ID of the parent requirement (e.g., RF-1, REQ-1). null if none.
+                        - requirementName: the name of the parent requirement. null if none.
                         - hasDesign = true if there is at least one architectural reference (class, controller, DAO, diagram)
                         - hasTest = true if there is at least one test case covering it
-                        - designRef: briefly describe WHAT implements that requirement (e.g., "ReservationController, DAO pattern")
+                        - designRef: briefly describe WHAT implements it (e.g., "ReservationController, DAO pattern")
                             If not found, write "No reference found"
-                        - testRef: briefly describe WHICH test covers it (e.g., "testReservation_Success, testReservation_InvalidDate")
+                        - testRef: briefly describe WHICH test covers it (e.g., "testReservation_Success")
                             If not found, write "No test found"
                         - gap: describe in 1 sentence the main gap. If all covered, EMPTY string "".
                         - Write in ENGLISH. Do NOT translate document-specific use case names,
                           identifiers, class names, or any term exactly as it appears in the document.
-                        - DO NOT invent Use Cases that do not exist in the document
+                        - DO NOT invent Use Cases or Requirements that do not exist in the document
                         """;
 
     private final ChatClient chatClient;
@@ -102,10 +111,5 @@ public class TraceabilityMatrixAgent {
             log.error("TraceabilityMatrixAgent: error during matrix construction", e);
             return List.of();
         }
-    }
-
-    private String truncate(String text, int maxChars) {
-        if (text.length() <= maxChars) return text;
-        return text.substring(0, maxChars) + "\n[... truncated ...]";
     }
 }

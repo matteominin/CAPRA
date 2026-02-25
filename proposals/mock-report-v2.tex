@@ -1,0 +1,352 @@
+\documentclass[11pt,a4paper]{scrartcl}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[english]{babel}
+\usepackage{ragged2e}
+\usepackage{hyperref}
+\usepackage{enumitem}
+\usepackage{booktabs}
+\usepackage{geometry}
+\usepackage{fancyhdr}
+\usepackage{longtable}
+\usepackage{array}
+\usepackage{amssymb}
+\geometry{a4paper, margin=2.5cm}
+\setlength{\emergencystretch}{3em}
+
+\hypersetup{
+  colorlinks=true,
+  linkcolor=blue!70!black,
+  urlcolor=blue!70!black,
+}
+
+\newcommand{\ok}{$\checkmark$}
+\newcommand{\nok}{$\times$}
+
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small CAPRA --- Software Engineering Audit}
+\fancyhead[R]{\small \today}
+\fancyfoot[C]{\thepage}
+
+\title{Software Engineering Audit Report\\[0.3em]\large Relazione\_Ingegneria\_Software-1.pdf\\[0.8em]\normalsize\textit{--- MOCK V2 for layout review ---}}
+\author{CAPRA --- Automated Audit System}
+\date{\today}
+\begin{document}
+\maketitle
+\tableofcontents
+\newpage
+
+% ══════════════════════════════════════════════════════════════
+% SECTION 1: PROJECT OVERVIEW
+% ══════════════════════════════════════════════════════════════
+\section{Project Overview}
+
+The project implements a \textbf{library management system} designed to handle book cataloging, user registration, and loan operations for a university library. Users can register, browse the catalog, search by title/author/genre, request book loans, extend active loans, and post comments on works and volumes. Librarians manage the catalog (add, edit, remove books) and process loan conclusions. The system is built with \textbf{Java} using \textbf{JavaFX} for the graphical interface and \textbf{PostgreSQL} for data persistence, following an MVC architectural pattern with DAO-based data access.
+
+\medskip
+\noindent\rule{\textwidth}{0.4pt}\\
+{\small Issues found: \textbf{6} (HIGH: 1, MEDIUM: 4, LOW: 1) \quad---\quad Features: 6/7 present, 1 partial}
+
+\newpage
+
+% ══════════════════════════════════════════════════════════════
+% SECTION 2: REQUIREMENTS ANALYSIS (Proposal B with links)
+% ══════════════════════════════════════════════════════════════
+\section{Requirements Analysis}
+\label{sec:requirements}
+
+\textit{This section lists the functional requirements identified in the document and indicates whether each has an associated use case.}
+
+\begin{center}
+\begin{longtable}{l >{\RaggedRight\arraybackslash}p{4.5cm} c >{\RaggedRight\arraybackslash}p{4.5cm}}
+\toprule
+\textbf{Req.} & \textbf{Name} & \textbf{UC?} & \textbf{Linked UCs} \\
+\midrule
+\endhead
+\hypertarget{req:RF-1}{RF-1} & Registrazione utente & \ok & \hyperlink{uc:UC-1}{UC-1} \\
+\hypertarget{req:RF-2}{RF-2} & Login utente & \ok & \hyperlink{uc:UC-0}{UC-0} \\
+\hypertarget{req:RF-3}{RF-3} & Gestione prestiti & \ok & \hyperlink{uc:UC-2}{UC-2}, \hyperlink{uc:UC-2.1}{UC-2.1}, \hyperlink{uc:UC-2.2}{UC-2.2}, \hyperlink{uc:UC-2.3}{UC-2.3}, \hyperlink{uc:UC-4}{UC-4} \\
+\hypertarget{req:RF-4}{RF-4} & Gestione catalogo libri & \ok & \hyperlink{uc:UC-3}{UC-3}, \hyperlink{uc:UC-3.1}{UC-3.1}, \hyperlink{uc:UC-3.2}{UC-3.2}, \hyperlink{uc:UC-5}{UC-5} \\
+\hypertarget{req:RF-5}{RF-5} & Ricerca libri & \ok & \hyperlink{uc:UC-5.1}{UC-5.1}, \hyperlink{uc:UC-5.2}{UC-5.2} \\
+\hypertarget{req:RF-6}{RF-6} & Gestione commenti & \ok & \hyperlink{uc:UC-6}{UC-6}, \hyperlink{uc:UC-6.1}{UC-6.1}, \hyperlink{uc:UC-6.2}{UC-6.2}, \hyperlink{uc:UC-6.3}{UC-6.3} \\
+\hypertarget{req:RF-7}{RF-7} & Gestione profilo & \ok & \hyperlink{uc:UC-0.1}{UC-0.1}, \hyperlink{uc:UC-0.2}{UC-0.2} \\
+\hypertarget{req:RF-8}{RF-8} & Limite massimo prestiti & \ok & \hyperlink{uc:UC-2.4}{UC-2.4} \\
+\midrule
+\hypertarget{req:RF-9}{RF-9} & Notifiche scadenza & \nok & --- \\
+\hypertarget{req:RF-10}{RF-10} & Report statistiche & \nok & --- \\
+\bottomrule
+\end{longtable}
+\end{center}
+
+\paragraph{Requirements without UCs:}
+\begin{itemize}[leftmargin=*]
+  \item \textbf{\hyperlink{req:RF-9}{RF-9} --- Notifiche scadenza:} No use case references automated notifications. $\rightarrow$ Define a UC or mark as out of scope.
+  \item \textbf{\hyperlink{req:RF-10}{RF-10} --- Report statistiche:} No UC covers reporting. $\rightarrow$ Add UC or clarify scope.
+\end{itemize}
+
+\newpage
+
+% ══════════════════════════════════════════════════════════════
+% SECTION 3: ARCHITECTURE ANALYSIS
+% ══════════════════════════════════════════════════════════════
+\section{Architecture Analysis}
+\label{sec:architecture}
+
+The project follows a \textbf{layered Model-View-Controller (MVC)} architecture. The presentation layer uses \textbf{JavaFX} with dedicated controllers per view; the business logic layer processes operations and validation; the persistence layer uses \textbf{DAO pattern} with \textbf{PostgreSQL}. The \textbf{Singleton} pattern manages the database connection. Components connect hierarchically: Controllers $\rightarrow$ Services $\rightarrow$ DAOs $\rightarrow$ Database.
+
+No significant architecture issues were identified.
+
+\newpage
+
+% ══════════════════════════════════════════════════════════════
+% SECTION 4: USE CASE ANALYSIS
+% ══════════════════════════════════════════════════════════════
+\section{Use Case Analysis}
+\label{sec:usecases}
+
+The document describes \textbf{27 use cases}. This section analyzes the \emph{internal quality} of each use case (completeness, clarity, consistency of the template). Traceability to requirements and tests is analyzed in Section~\ref{sec:traceability}.
+
+% ─────────────── UC WITH TEMPLATE ───────────────
+\subsection{Use Cases with Structured Template}
+
+% UC-1
+\hypertarget{uc:UC-1}{}
+\subsubsection*{UC-1 --- Registrazione}
+\begin{description}[leftmargin=1em, font=\normalfont\bfseries, style=nextline]
+  \item[Actor:] Utente non registrato
+  \item[Preconditions:] L'utente non ha un account nel sistema
+  \item[Main Flow:]~
+    \begin{enumerate}[nosep]
+      \item L'utente accede alla pagina di registrazione
+      \item Inserisce nome, cognome, email e password
+      \item Il sistema valida i campi e crea l'account
+    \end{enumerate}
+  \item[Postconditions:] L'utente \`e registrato e pu\`o effettuare il login
+  \item[Alternative Flows:] Campi non validi $\rightarrow$ messaggio di errore
+\end{description}
+\ok\ No internal issues identified. Template is complete.
+
+\bigskip
+
+% UC-2
+\hypertarget{uc:UC-2}{}
+\subsubsection*{UC-2 --- Effettua prestito}
+\begin{description}[leftmargin=1em, font=\normalfont\bfseries, style=nextline]
+  \item[Actor:] Utente registrato
+  \item[Preconditions:] L'utente \`e autenticato; il libro \`e disponibile
+  \item[Main Flow:]~
+    \begin{enumerate}[nosep]
+      \item L'utente cerca un libro nel catalogo
+      \item Seleziona un volume disponibile
+      \item Conferma il prestito
+      \item Il sistema registra il prestito con data di scadenza
+    \end{enumerate}
+  \item[Postconditions:] Il prestito \`e attivo; il volume risulta non disponibile
+  \item[Alternative Flows:] Nessun volume disponibile $\rightarrow$ notifica
+\end{description}
+\begin{description}[style=nextline, leftmargin=1em]
+  \item[\fbox{\textsc{medium}} --- UC-STRUCT-001]
+  \textbf{Problem:} The business rule ``maximum 3 concurrent loans'' is mentioned in the domain model but not reflected in the UC template's preconditions or alternative flows.\\
+  \textbf{Suggestion:} Add a precondition ``User has fewer than 3 active loans'' and an alternative flow describing the rejection when the limit is exceeded.
+\end{description}
+
+\bigskip
+
+% UC-3
+\hypertarget{uc:UC-3}{}
+\subsubsection*{UC-3 --- Aggiunge libro}
+\begin{description}[leftmargin=1em, font=\normalfont\bfseries, style=nextline]
+  \item[Actor:] Biblioteca (Bibliotecario)
+  \item[Preconditions:] Il bibliotecario \`e autenticato
+  \item[Main Flow:]~
+    \begin{enumerate}[nosep]
+      \item Il bibliotecario accede alla gestione catalogo
+      \item Inserisce i dati del nuovo libro (titolo, autore, ISBN, genere)
+      \item Conferma l'inserimento
+      \item Il sistema aggiunge il libro al catalogo
+    \end{enumerate}
+  \item[Postconditions:] Il libro \`e presente nel catalogo
+  \item[Alternative Flows:] ISBN duplicato $\rightarrow$ errore
+\end{description}
+\begin{description}[style=nextline, leftmargin=1em]
+  \item[\fbox{\textsc{medium}} --- UC-STRUCT-002]
+  \textbf{Problem:} The actor is named ``Biblioteca'' in the UC diagram but ``Bibliotecario'' in the template text.\\
+  \textbf{Suggestion:} Unify actor naming: choose one term and apply consistently.
+\end{description}
+
+\bigskip
+
+% UC-4
+\hypertarget{uc:UC-4}{}
+\subsubsection*{UC-4 --- Conclude Prestito}
+\begin{description}[leftmargin=1em, font=\normalfont\bfseries, style=nextline]
+  \item[Actor:] Biblioteca (Bibliotecario)
+  \item[Preconditions:] Esiste un prestito attivo
+  \item[Main Flow:]~
+    \begin{enumerate}[nosep]
+      \item Il bibliotecario cerca il prestito da concludere
+      \item Conferma la restituzione del volume
+      \item Il sistema aggiorna lo stato del prestito e la disponibilit\`a del volume
+    \end{enumerate}
+  \item[Postconditions:] Il prestito \`e concluso; il volume \`e nuovamente disponibile
+  \item[Alternative Flows:] Prestito non trovato $\rightarrow$ errore
+\end{description}
+\begin{description}[style=nextline, leftmargin=1em]
+  \item[\fbox{\textsc{medium}} --- UC-STRUCT-003]
+  \textbf{Problem:} Same actor naming inconsistency as \hyperlink{uc:UC-3}{UC-3}.\\
+  \textbf{Suggestion:} Use the unified actor name chosen for \hyperlink{uc:UC-3}{UC-3}.
+\end{description}
+
+% ─────────────── UC WITHOUT TEMPLATE ───────────────
+\subsection{Use Cases without Structured Template}
+The following use cases are referenced in diagrams or narrative but lack a formal template description. A missing template does not necessarily indicate an error if the UC is sufficiently simple.
+
+\begin{itemize}[nosep]
+  \item \hypertarget{uc:UC-0}{UC-0} --- Login
+  \item \hypertarget{uc:UC-0.1}{UC-0.1} --- Modifica account
+  \item \hypertarget{uc:UC-0.2}{UC-0.2} --- Elimina account
+  \item \hypertarget{uc:UC-2.1}{UC-2.1} --- Cancella prestito
+  \item \hypertarget{uc:UC-2.2}{UC-2.2} --- Prolunga prestito
+  \item \hypertarget{uc:UC-2.3}{UC-2.3} --- Visualizza prestiti
+  \item \hypertarget{uc:UC-2.4}{UC-2.4} --- Limite massimo di prestiti
+  \item \hypertarget{uc:UC-3.1}{UC-3.1} --- Modifica libro
+  \item \hypertarget{uc:UC-3.2}{UC-3.2} --- Rimuove libro
+  \item \hypertarget{uc:UC-3.3}{UC-3.3} --- CRUD libro (summary)
+  \item \hypertarget{uc:UC-5}{UC-5} --- Visualizza catalogo
+  \item \hypertarget{uc:UC-5.1}{UC-5.1} --- Cerca libro
+  \item \hypertarget{uc:UC-5.2}{UC-5.2} --- Verifica disponibilit\`a opera
+  \item \hypertarget{uc:UC-5.3}{UC-5.3} --- Recupero ISBN
+  \item \hypertarget{uc:UC-6}{UC-6} --- Commento su opera
+  \item \hypertarget{uc:UC-6.1}{UC-6.1} --- Commento su volume
+  \item \hypertarget{uc:UC-6.2}{UC-6.2} --- Visualizza commenti opera
+  \item \hypertarget{uc:UC-6.3}{UC-6.3} --- Visualizza commenti volume
+  \item \hypertarget{uc:UC-7}{UC-7} --- Login Biblioteca
+  \item \hypertarget{uc:UC-8}{UC-8} --- Visualizza catalogo Biblioteca
+  \item \hypertarget{uc:UC-9}{UC-9} --- Validazione campi
+  \item \hypertarget{uc:UC-10}{UC-10} --- Gestione errori login
+  \item \hypertarget{uc:UC-11}{UC-11} --- Gestione errori prenotazione
+\end{itemize}
+
+\newpage
+
+% ══════════════════════════════════════════════════════════════
+% SECTION 5: TESTING ANALYSIS
+% ══════════════════════════════════════════════════════════════
+\section{Testing Analysis}
+\label{sec:testing}
+
+\subsection{Testing Strategy}
+The project uses \textbf{JUnit} for unit tests and \textbf{TestFX} for UI tests. Unit tests cover core business operations (loan reservations, cancellations, ISBN retrieval, availability checks). UI tests verify login flows, field validation, and book reservation interactions. Error scenarios include invalid logins, field validation failures, unavailable books, and exceeded loan limits.
+
+\subsection{Additional Testing Issues}
+
+\begin{description}[style=nextline, leftmargin=1em]
+  \item[\fbox{\textsc{high}} --- \hypertarget{tst:TST-001}{TST-001} --- No mocking framework]
+  \textbf{Problem:} All tests access the real PostgreSQL database. No mocking or in-memory database is used, making tests dependent on external state.\\
+  \textbf{Suggestion:} Introduce Mockito for unit tests and H2 for integration tests, isolating test execution from external dependencies.
+\end{description}
+
+\newpage
+
+% ══════════════════════════════════════════════════════════════
+% SECTION 6: TRACEABILITY ANALYSIS
+% ══════════════════════════════════════════════════════════════
+\section{Traceability Analysis}
+\label{sec:traceability}
+
+This section maps each requirement to its use cases, design references, and test coverage. The table starts from requirements; use cases that exist without a parent requirement are listed separately.
+
+\begin{center}
+\begin{longtable}{l l c c}
+\toprule
+\textbf{Requirement} & \textbf{UC} & \textbf{Design} & \textbf{Test} \\
+\midrule
+\endhead
+
+\multirow{1}{*}{\hyperlink{req:RF-1}{RF-1}} & \hyperlink{uc:UC-1}{UC-1} & \ok & \ok \\
+\midrule
+
+\multirow{1}{*}{\hyperlink{req:RF-2}{RF-2}} & \hyperlink{uc:UC-0}{UC-0} & \ok & \ok \\
+\midrule
+
+\hyperlink{req:RF-3}{RF-3} & \hyperlink{uc:UC-2}{UC-2} & \ok & \ok \\
+ & \hyperlink{uc:UC-2.1}{UC-2.1} & \ok & \ok \\
+ & \hyperlink{uc:UC-2.2}{UC-2.2} & \ok & \ok \\
+ & \hyperlink{uc:UC-2.3}{UC-2.3} & \ok & \nok \\
+ & \hyperlink{uc:UC-2.4}{UC-2.4} & \ok & \nok \\
+ & \hyperlink{uc:UC-4}{UC-4} & \ok & \nok \\
+\midrule
+
+\hyperlink{req:RF-4}{RF-4} & \hyperlink{uc:UC-3}{UC-3} & \ok & \nok \\
+ & \hyperlink{uc:UC-3.1}{UC-3.1} & \ok & \nok \\
+ & \hyperlink{uc:UC-3.2}{UC-3.2} & \ok & \nok \\
+ & \hyperlink{uc:UC-3.3}{UC-3.3} & \ok & \nok \\
+ & \hyperlink{uc:UC-5}{UC-5} & \ok & \nok \\
+\midrule
+
+\hyperlink{req:RF-5}{RF-5} & \hyperlink{uc:UC-5.1}{UC-5.1} & \ok & \nok \\
+ & \hyperlink{uc:UC-5.2}{UC-5.2} & \ok & \ok \\
+\midrule
+
+\hyperlink{req:RF-6}{RF-6} & \hyperlink{uc:UC-6}{UC-6} & \ok & \nok \\
+ & \hyperlink{uc:UC-6.1}{UC-6.1} & \ok & \nok \\
+ & \hyperlink{uc:UC-6.2}{UC-6.2} & \ok & \nok \\
+ & \hyperlink{uc:UC-6.3}{UC-6.3} & \ok & \nok \\
+\midrule
+
+\hyperlink{req:RF-7}{RF-7} & \hyperlink{uc:UC-0.1}{UC-0.1} & \ok & \nok \\
+ & \hyperlink{uc:UC-0.2}{UC-0.2} & \ok & \nok \\
+\midrule
+
+\hyperlink{req:RF-8}{RF-8} & \hyperlink{uc:UC-2.4}{UC-2.4} & \ok & \nok \\
+\midrule
+
+\hyperlink{req:RF-9}{RF-9} & --- & --- & --- \\
+\midrule
+
+\hyperlink{req:RF-10}{RF-10} & --- & --- & --- \\
+
+\midrule
+\midrule
+\multicolumn{4}{l}{\textit{Use cases without a parent requirement:}} \\
+\midrule
+
+--- & \hyperlink{uc:UC-7}{UC-7} (Login Biblioteca) & \ok & \nok \\
+--- & \hyperlink{uc:UC-8}{UC-8} (Catalogo Biblioteca) & \ok & \nok \\
+--- & \hyperlink{uc:UC-9}{UC-9} (Validazione campi) & \ok & \ok \\
+--- & \hyperlink{uc:UC-10}{UC-10} (Errori login) & \ok & \ok \\
+--- & \hyperlink{uc:UC-11}{UC-11} (Errori prenotazione) & \ok & \ok \\
+
+\bottomrule
+\end{longtable}
+\end{center}
+
+\medskip
+
+\textbf{Summary:} Of 10 requirements, 8 are linked to UCs, 2 have no UC. Of 27 UCs, 10 have full coverage (design + test), 17 lack test coverage, 5 have no parent requirement.
+
+\paragraph{Suggestion:} Prioritize adding tests for core operations (\hyperlink{uc:UC-3}{UC-3}, \hyperlink{uc:UC-4}{UC-4}), then account management (\hyperlink{uc:UC-0.1}{UC-0.1}, \hyperlink{uc:UC-0.2}{UC-0.2}). Define UCs for \hyperlink{req:RF-9}{RF-9} and \hyperlink{req:RF-10}{RF-10}, or remove these requirements from scope.
+
+
+% ══════════════════════════════════════════════════════════════
+% SECTION 7: MISSING FEATURES
+% ══════════════════════════════════════════════════════════════
+\section{Missing Features}
+
+\begin{center}
+\begin{tabular}{>{\RaggedRight\arraybackslash}p{6cm} c c}
+\toprule
+\textbf{Feature} & \textbf{Status} & \textbf{Coverage} \\
+\midrule
+Definition and Documentation of Use Cases & \textsc{partial} & 60\% \\
+\textit{6 other feature(s)} & \textsc{present} & 100\% \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\paragraph{Definition and Documentation of Use Cases}
+Templates lack pre/post-conditions for several UCs. $\rightarrow$ Add formal conditions to each UC template.
+
+
+\end{document}

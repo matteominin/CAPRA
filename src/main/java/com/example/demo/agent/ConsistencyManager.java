@@ -202,9 +202,9 @@ public class ConsistencyManager {
     private String prefixForCategory(String category) {
         if (category == null || category.isBlank()) return "ISS";
         return switch (category.toLowerCase()) {
-            case "requisiti" -> "REQ";
-            case "testing" -> "TST";
-            case "architettura" -> "ARCH";
+            case "requirements", "requisiti" -> "REQ";
+            case "testing", "test" -> "TST";
+            case "architecture", "architettura" -> "ARCH";
             default -> "ISS";
         };
     }
