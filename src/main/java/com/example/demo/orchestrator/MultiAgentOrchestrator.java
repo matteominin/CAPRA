@@ -20,13 +20,15 @@ import java.util.stream.Stream;
  * Multi-agent pipeline orchestrator.
  * Pipeline:
  * 1. Text extraction (Flask)
- * 2. Parallel analysis: Requirements + TestAuditor + Architecture + Features + Traceability + Glossary
- * 3. Evidence Anchoring (fuzzy match, NO LLM)
- * 4. Confidence filtering (discard confidence &lt; threshold)
- * 5. LLM cross-verification (ConsistencyManager)
- * 6. Report normalization (ReportNormalizer)
- * 7. LaTeX report generation
- * 8. PDF compilation (pdflatex)
+ * 2a. Parallel extraction: UseCaseExtractor + RequirementExtractor
+ * 2b. Parallel analysis: Requirements + TestAuditor + Architecture + Features + Glossary
+ * 3. Traceability mapping (uses extracted UCs/Reqs as context)
+ * 4. Evidence Anchoring (fuzzy match, NO LLM)
+ * 5. Confidence filtering (discard confidence &lt; threshold)
+ * 6. LLM cross-verification (ConsistencyManager)
+ * 7. Report normalization (ReportNormalizer)
+ * 8. LaTeX report generation
+ * 9. PDF compilation (pdflatex)
  */
 @Service
 public class MultiAgentOrchestrator {
@@ -49,7 +51,8 @@ public class MultiAgentOrchestrator {
     private final ArchitectureAgent architectureAgent;
     private final FeatureCheckAgent featureCheckAgent;
     private final TraceabilityMatrixAgent traceabilityAgent;
-    private final GlossaryConsistencyAgent glossaryAgent;
+    private final UseCaseExtractorAgent useCaseExtractorAgent;
+    private final RequirementExtractorAgent requirementExtractorAgent;
     private final EvidenceAnchoringService evidenceAnchoring;
     private final ConsistencyManager consistencyManager;
     private final ReportNormalizer reportNormalizer;
@@ -63,7 +66,8 @@ public class MultiAgentOrchestrator {
                                   ArchitectureAgent architectureAgent,
                                   FeatureCheckAgent featureCheckAgent,
                                   TraceabilityMatrixAgent traceabilityAgent,
-                                  GlossaryConsistencyAgent glossaryAgent,
+                                  UseCaseExtractorAgent useCaseExtractorAgent,
+                                  RequirementExtractorAgent requirementExtractorAgent,
                                   EvidenceAnchoringService evidenceAnchoring,
                                   ConsistencyManager consistencyManager,
                                   ReportNormalizer reportNormalizer,
@@ -77,6 +81,8 @@ public class MultiAgentOrchestrator {
         this.featureCheckAgent = featureCheckAgent;
         this.traceabilityAgent = traceabilityAgent;
         this.glossaryAgent = glossaryAgent;
+        this.useCaseExtractorAgent = useCaseExtractorAgent;
+        this.requirementExtractorAgent = requirementExtractorAgent;
         this.evidenceAnchoring = evidenceAnchoring;
         this.consistencyManager = consistencyManager;
         this.reportNormalizer = reportNormalizer;
@@ -92,12 +98,12 @@ public class MultiAgentOrchestrator {
         log.info("═══════════════════════════════════════════════");
 
         // ── Step 1: Text extraction ──
-        log.info("[1/8] Extracting text from PDF...");
+        log.info("[1/9] Extracting text from PDF...");
         String fullText = ingestionService.extractFullText(file);
-        log.info("[1/8] Extraction completed: {} characters", fullText.length());
+        log.info("[1/9] Extraction completed: {} characters", fullText.length());
 
-        // ── Step 2: Parallel analysis with ALL agents ──
-        log.info("[2/8] Starting parallel analysis (6 agents)...");
+        // ── Step 2: Parallel analysis — ALL agents + extractors run together ──
+        log.info("[2/9] Starting parallel analysis (6 agents + 2 extractors)...");
 
         CompletableFuture<AgentResponse> reqFuture =
                 CompletableFuture.supplyAsync(() -> requirementsAgent.analyze(fullText), agentExecutor);
@@ -107,25 +113,36 @@ public class MultiAgentOrchestrator {
                 CompletableFuture.supplyAsync(() -> architectureAgent.analyze(fullText), agentExecutor);
         CompletableFuture<List<FeatureCoverage>> featureFuture =
                 CompletableFuture.supplyAsync(() -> featureCheckAgent.checkFeatures(fullText), agentExecutor);
-        CompletableFuture<List<TraceabilityEntry>> traceFuture =
-                CompletableFuture.supplyAsync(() -> traceabilityAgent.buildMatrix(fullText), agentExecutor);
         CompletableFuture<List<GlossaryIssue>> glossaryFuture =
                 CompletableFuture.supplyAsync(() -> glossaryAgent.analyze(fullText), agentExecutor);
+        CompletableFuture<List<UseCaseEntry>> ucFuture =
+                CompletableFuture.supplyAsync(() -> useCaseExtractorAgent.extract(fullText), agentExecutor);
+        CompletableFuture<List<RequirementEntry>> reqExtractFuture =
+                CompletableFuture.supplyAsync(() -> requirementExtractorAgent.extract(fullText), agentExecutor);
 
         AgentResponse reqResponse = reqFuture.join();
         AgentResponse testResponse = testFuture.join();
         AgentResponse archResponse = archFuture.join();
         List<FeatureCoverage> featureCoverage = featureFuture.join();
-        List<TraceabilityEntry> traceability = traceFuture.join();
         List<GlossaryIssue> glossaryIssues = glossaryFuture.join();
+        List<UseCaseEntry> extractedUCs = ucFuture.join();
+        List<RequirementEntry> extractedReqs = reqExtractFuture.join();
 
-        log.info("[2/8] Analysis completed — REQ: {} issues, TST: {} issues, ARCH: {} issues, " +
-                        "Features: {}, Traceability: {} entries, Glossary: {} issues",
+        log.info("[2/9] Analysis completed — REQ: {} issues, TST: {} issues, ARCH: {} issues, " +
+                        "Features: {}, Glossary: {} issues, UCs extracted: {}, Reqs extracted: {}",
                 reqResponse.issues().size(), testResponse.issues().size(), archResponse.issues().size(),
-                featureCoverage.size(), traceability.size(), glossaryIssues.size());
+                featureCoverage.size(), glossaryIssues.size(),
+                extractedUCs.size(), extractedReqs.size());
 
-        // ── Step 3: Evidence Anchoring (fuzzy match, NO LLM) ──
-        log.info("[3/8] Evidence Anchoring (quote verification via fuzzy match)...");
+        // ── Step 3: Traceability mapping (uses extracted UCs/Reqs as context) ──
+        log.info("[3/9] Building traceability matrix (with {} UCs and {} Reqs as context)...",
+                extractedUCs.size(), extractedReqs.size());
+        List<TraceabilityEntry> traceability = traceabilityAgent.buildMatrix(
+                fullText, extractedUCs, extractedReqs);
+        log.info("[3/9] Traceability completed: {} entries", traceability.size());
+
+        // ── Step 4: Evidence Anchoring (fuzzy match, NO LLM) ──
+        log.info("[4/9] Evidence Anchoring (quote verification via fuzzy match)...");
         List<AuditIssue> allCandidates = Stream.of(
                 reqResponse.issues().stream(),
                 testResponse.issues().stream(),
@@ -133,55 +150,55 @@ public class MultiAgentOrchestrator {
         ).flatMap(s -> s).sorted(ISSUE_ORDER).toList();
 
         List<AuditIssue> anchoredIssues = evidenceAnchoring.anchorEvidence(fullText, allCandidates);
-        log.info("[3/8] Evidence Anchoring completed: {}/{} issues survived",
+        log.info("[4/9] Evidence Anchoring completed: {}/{} issues survived",
                 anchoredIssues.size(), allCandidates.size());
 
-        // ── Step 4: Confidence filtering ──
-        log.info("[4/8] Filtering by confidence (threshold {})...", CONFIDENCE_THRESHOLD);
+        // ── Step 5: Confidence filtering ──
+        log.info("[5/9] Filtering by confidence (threshold {})...", CONFIDENCE_THRESHOLD);
         List<AuditIssue> confidentIssues = anchoredIssues.stream()
                 .filter(i -> i.confidenceScore() >= CONFIDENCE_THRESHOLD)
                 .toList();
         long filtered = anchoredIssues.size() - confidentIssues.size();
-        log.info("[4/8] {} issues with sufficient confidence ({} discarded below threshold)",
+        log.info("[5/9] {} issues with sufficient confidence ({} discarded below threshold)",
                 confidentIssues.size(), filtered);
 
-        // ── Step 5: LLM verification (ConsistencyManager) ──
-        log.info("[5/8] LLM cross-verification on {} issues...", confidentIssues.size());
+        // ── Step 6: LLM verification (ConsistencyManager) ──
+        log.info("[6/9] LLM cross-verification on {} issues...", confidentIssues.size());
         List<AuditIssue> verifiedIssues = consistencyManager.verify(fullText, confidentIssues)
                 .stream().sorted(ISSUE_ORDER).toList();
-        log.info("[5/8] Verification completed: {} issues confirmed", verifiedIssues.size());
+        log.info("[6/9] Verification completed: {} issues confirmed", verifiedIssues.size());
 
-        // ── Step 6: Report normalization ──
-        log.info("[6/8] Normalizing report...");
+        // ── Step 7: Report normalization ──
+        log.info("[7/9] Normalizing report...");
         List<AuditIssue> normalizedIssues = reportNormalizer.normalizeIssues(verifiedIssues, fullText);
         List<FeatureCoverage> missingFeatures = reportNormalizer.filterMissingFeatures(featureCoverage);
         Map<String, String> extractionCompleteness = reportNormalizer.computeExtractionCompleteness(
                 normalizedIssues, featureCoverage);
-        log.info("[6/8] Normalization completed: {} issues, {} missing features, {} completeness metrics",
+        log.info("[7/9] Normalization completed: {} issues, {} missing features, {} completeness metrics",
                 normalizedIssues.size(), missingFeatures.size(), extractionCompleteness.size());
 
-        // ── Step 7: Report generation ──
-        log.info("[7/8] Generating LaTeX report...");
+        // ── Step 8: Report generation ──
+        log.info("[8/9] Generating LaTeX report...");
         AuditReport report = AuditReport.from(filename, normalizedIssues,
-                featureCoverage, traceability, glossaryIssues);
+                featureCoverage, traceability, glossaryIssues, extractedUCs, extractedReqs);
         Path texFile = latexReportService.generateReport(report, fullText,
                 missingFeatures, featureCoverage, extractionCompleteness);
-        log.info("[7/8] LaTeX report generated: {}", texFile);
+        log.info("[8/9] LaTeX report generated: {}", texFile);
 
-        // ── Step 8: PDF compilation ──
+        // ── Step 9: PDF compilation ──
         Path pdfFile = null;
         try {
-            log.info("[8/8] Compiling PDF with pdflatex...");
+            log.info("[9/9] Compiling PDF with pdflatex...");
             pdfFile = latexCompilerService.compile(texFile);
-            log.info("[8/8] PDF compiled: {}", pdfFile);
+            log.info("[9/9] PDF compiled: {}", pdfFile);
         } catch (Exception e) {
-            log.warn("[8/8] PDF compilation failed (.tex file is still available): {}", e.getMessage());
+            log.warn("[9/9] PDF compilation failed (.tex file is still available): {}", e.getMessage());
         }
 
         log.info("═══════════════════════════════════════════════");
-        log.info("Pipeline completed: {} issues, {} features ({} missing), {} traceability, {} glossary",
+        log.info("Pipeline completed: {} issues, {} features ({} missing), {} traceability, {} glossary, {} UCs, {} Reqs",
                 report.totalIssues(), featureCoverage.size(), missingFeatures.size(),
-                traceability.size(), glossaryIssues.size());
+                traceability.size(), glossaryIssues.size(), extractedUCs.size(), extractedReqs.size());
         log.info("═══════════════════════════════════════════════");
 
         return new AuditResult(report, texFile, pdfFile);

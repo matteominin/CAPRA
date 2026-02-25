@@ -13,7 +13,6 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.*;
-import java.util.stream.Collectors;
 
 /**
  * Generates the audit report in LaTeX format.
@@ -92,21 +91,6 @@ public class LatexReportService {
                     + "The document appears well-structured and coherent.";
         }
 
-        Map<String, List<AuditIssue>> byCategory = report.issues().stream()
-                .collect(Collectors.groupingBy(i -> i.category() != null ? i.category() : "Other",
-                        LinkedHashMap::new, Collectors.toList()));
-
-        StringBuilder issuesSummary = new StringBuilder();
-        for (var entry : byCategory.entrySet()) {
-            issuesSummary.append("\nCategory %s (%d issues):\n".formatted(entry.getKey(), entry.getValue().size()));
-            for (AuditIssue i : entry.getValue()) {
-                issuesSummary.append("- [%s] %s: %s (p. %d)\n".formatted(
-                        i.severity(), i.id(),
-                        i.shortDescription() != null ? i.shortDescription() : i.description(),
-                        i.pageReference()));
-            }
-        }
-
         StringBuilder featureSummary = new StringBuilder();
         if (allFeatures != null && !allFeatures.isEmpty()) {
             long present = allFeatures.stream().filter(f -> f.status() == FeatureCoverage.FeatureStatus.PRESENT).count();
@@ -121,12 +105,19 @@ public class LatexReportService {
             for an audit report of a SWE document written by a university student.
             Generate the output directly in valid LaTeX code.
                 
-            YOUR TASK: Describe ONLY what the project is about.
+            YOUR TASK: Describe ONLY what the project is about from a DOMAIN perspective.
             Write a concise description of the system the student designed:
-            - What is the application domain?
-            - What are the main features and functionalities?
-            - What technologies and frameworks are used?
-            - What architectural patterns are mentioned?
+            - What is the application domain? (e.g. library management, e-commerce, booking system...)
+            - Who are the intended users / actors? (e.g. admin, customer, librarian...)
+            - What are the main features and workflows the system offers?
+            - What problem does the system solve for its users?
+                
+            IMPORTANT:
+            - Focus on WHAT the system does, NOT how it is built.
+            - Do NOT list technologies, frameworks, or programming languages.
+            - Do NOT describe architectural patterns (MVC, REST, microservices, etc.).
+            - Do NOT discuss databases, deployment, or infrastructure.
+            - Instead, describe the user-facing functionalities and the domain logic.
                 
             DO NOT discuss the quality of the document.
             DO NOT mention audit findings, issues, or recommendations.
@@ -135,7 +126,7 @@ public class LatexReportService {
                 
             OUTPUT FORMAT (pure LaTeX):
             - One or two short paragraphs
-            - Use \\textbf{} for emphasis on key technologies and patterns
+            - Use \\textbf{} for emphasis on key domain concepts and features
             - Properly escape: & as \\&, % as \\%, _ as \\_
             - DO NOT generate \\documentclass, \\begin{document}, \\section, \\subsection
             - DO NOT use non-standard packages
@@ -145,18 +136,23 @@ public class LatexReportService {
             - Use a formal, professional, and objective tone
             """;
 
+        StringBuilder ucSummary = new StringBuilder();
+        if (report.useCases() != null && !report.useCases().isEmpty()) {
+            ucSummary.append("\nUse cases found in the project:\n");
+            for (var uc : report.useCases()) {
+                ucSummary.append("- %s: %s\n".formatted(uc.useCaseId(), uc.useCaseName()));
+            }
+        }
+
         String userPrompt = """
             Generate the project overview for the document '%s'.
-            Total issues found: %d (HIGH: %d, MEDIUM: %d, LOW: %d)
+            
+            Here are some features found in the document to help you understand what the project does:
             %s
             %s""".formatted(
                 report.documentName(),
-                report.totalIssues(),
-                report.severityDistribution().getOrDefault(Severity.HIGH, 0L),
-                report.severityDistribution().getOrDefault(Severity.MEDIUM, 0L),
-                report.severityDistribution().getOrDefault(Severity.LOW, 0L),
-                issuesSummary,
-                featureSummary);
+                featureSummary,
+                ucSummary);
 
         try {
             String summary = callLlmWithFallback(systemPrompt, userPrompt);
@@ -255,7 +251,7 @@ public class LatexReportService {
                 
             \\hypersetup{
               colorlinks=true,
-              linkcolor=blue!70!black,
+              linkcolor=black,
               urlcolor=blue!70!black,
             }
                 
@@ -361,7 +357,8 @@ public class LatexReportService {
     }
 
     /**
-     * Section 6: Missing Features — centered summary table + paragraph details.
+     * Section 6: Missing Features — centered summary table showing ALL features
+     * (present, partial, absent) + paragraph details for problematic ones.
      */
     private String buildMissingFeaturesSection(List<FeatureCoverage> missingFeatures,
                                                 List<FeatureCoverage> allFeatures) {
@@ -372,31 +369,29 @@ public class LatexReportService {
             return sb.toString();
         }
 
-        long totalPresent = allFeatures.stream()
-                .filter(f -> f.status() == FeatureCoverage.FeatureStatus.PRESENT).count();
-
         if (missingFeatures.isEmpty()) {
             sb.append("All %d expected features are fully present in the document. No missing features detected.\n\n"
                     .formatted(allFeatures.size()));
             return sb.toString();
         }
 
-        // ── Centered summary table ──
+        // ── Centered summary table — ALL features ──
         sb.append("\\begin{center}\n");
         sb.append("\\begin{tabular}{>{\\RaggedRight\\arraybackslash}p{6cm} c c}\n");
         sb.append("\\toprule\n");
         sb.append("\\textbf{Feature} & \\textbf{Status} & \\textbf{Coverage} \\\\\n");
         sb.append("\\midrule\n");
 
-        for (FeatureCoverage f : missingFeatures) {
-            String statusLabel = f.status() == FeatureCoverage.FeatureStatus.PARTIAL ? "partial" : "absent";
+        for (FeatureCoverage f : allFeatures) {
+            String statusLabel = switch (f.status()) {
+                case PRESENT -> "present";
+                case PARTIAL -> "partial";
+                case ABSENT -> "absent";
+            };
             sb.append("%s & \\textsc{%s} & %d\\%% \\\\\n".formatted(
                     escapeLatex(f.featureName()), statusLabel, f.coverageScore()));
         }
-        if (totalPresent > 0) {
-            sb.append("\\textit{%d other feature(s)} & \\textsc{present} & 100\\%% \\\\\n"
-                    .formatted(totalPresent));
-        }
+
         sb.append("\\bottomrule\n");
         sb.append("\\end{tabular}\n");
         sb.append("\\end{center}\n\n");
@@ -422,32 +417,32 @@ public class LatexReportService {
 
     /**
      * Section 2: Requirements Analysis — table listing requirements
-     * with their UC linkage status. Requirements without UCs are flagged.
+     * from the dedicated RequirementExtractorAgent, with UC linkage
+     * derived from the traceability matrix.
+     * If no formal requirements were found, shows a note.
      */
     private String buildRequirementsSection(AuditReport report) {
         var sb = new StringBuilder();
 
-        if (report.traceabilityMatrix() == null || report.traceabilityMatrix().isEmpty()) {
-            sb.append("No requirements or use cases could be traced in the document.\n\n");
+        List<RequirementEntry> requirements = report.requirements();
+
+        if (requirements == null || requirements.isEmpty()) {
+            sb.append("The document does not contain a formal requirements section with explicit ");
+            sb.append("requirement identifiers (e.g., RF-1, REQ-01). ");
+            sb.append("Use cases are described directly without being traced to numbered requirements. ");
+            sb.append("See Section~\\ref{sec:traceability} for the traceability analysis.\n\n");
             return sb.toString();
         }
 
-        List<TraceabilityEntry> entries = report.traceabilityMatrix();
-
-        // Group entries by requirementId to build the requirements table
-        // A requirement may link to multiple UCs
-        Map<String, List<TraceabilityEntry>> byReq = new LinkedHashMap<>();
-        List<TraceabilityEntry> orphanUCs = new ArrayList<>(); // UCs without a parent req
-
-        for (TraceabilityEntry e : entries) {
-            if (e.requirementId() != null && !e.requirementId().isBlank()) {
-                byReq.computeIfAbsent(e.requirementId(), k -> new ArrayList<>()).add(e);
-            } else if (e.useCaseId() != null && !e.useCaseId().isBlank()) {
-                orphanUCs.add(e); // UC without parent requirement - not shown here
-            } else {
-                // Requirement with no UC (useCaseId is null)
-                byReq.computeIfAbsent(e.requirementId() != null ? e.requirementId() : "UNKNOWN",
-                        k -> new ArrayList<>()).add(e);
+        // Build a map: requirementId -> list of linked UC IDs (from traceability)
+        Map<String, List<String>> reqToUCs = new LinkedHashMap<>();
+        if (report.traceabilityMatrix() != null) {
+            for (TraceabilityEntry te : report.traceabilityMatrix()) {
+                if (te.requirementId() != null && !te.requirementId().isBlank()
+                        && te.useCaseId() != null && !te.useCaseId().isBlank()) {
+                    reqToUCs.computeIfAbsent(te.requirementId(), k -> new ArrayList<>())
+                            .add(te.useCaseId());
+                }
             }
         }
 
@@ -464,31 +459,25 @@ public class LatexReportService {
 
         List<String> reqsWithoutUC = new ArrayList<>();
 
-        for (var entry : byReq.entrySet()) {
-            String reqId = entry.getKey();
-            List<TraceabilityEntry> reqEntries = entry.getValue();
+        for (RequirementEntry req : requirements) {
+            List<String> linkedUCIds = reqToUCs.getOrDefault(req.requirementId(), List.of());
 
-            // Get requirement name from any entry
-            String reqName = reqEntries.stream()
-                    .filter(e -> e.requirementName() != null && !e.requirementName().isBlank())
-                    .map(TraceabilityEntry::requirementName)
-                    .findFirst().orElse("");
-
-            // Check if any entry has a UC
-            List<String> linkedUCs = reqEntries.stream()
-                    .filter(e -> e.useCaseId() != null && !e.useCaseId().isBlank())
-                    .map(e -> "\\hyperlink{uc:%s}{%s}".formatted(e.useCaseId(), e.useCaseId()))
+            List<String> linkedUCLinks = linkedUCIds.stream()
+                    .map(ucId -> "\\hyperlink{uc:%s}{%s}".formatted(ucId, ucId))
                     .toList();
 
-            boolean hasUC = !linkedUCs.isEmpty();
+            boolean hasUC = !linkedUCLinks.isEmpty();
             String ucMarker = hasUC ? "\\ok" : "\\nok";
-            String ucList = hasUC ? String.join(", ", linkedUCs) : "---";
+            String ucList = hasUC ? String.join(", ", linkedUCLinks) : "---";
 
             sb.append("\\hypertarget{req:%s}{%s} & %s & %s & %s \\\\\n".formatted(
-                    reqId, escapeLatex(reqId), escapeLatex(reqName), ucMarker, ucList));
+                    req.requirementId(),
+                    escapeLatex(req.requirementId()),
+                    escapeLatex(req.requirementName()),
+                    ucMarker, ucList));
 
             if (!hasUC) {
-                reqsWithoutUC.add(reqId);
+                reqsWithoutUC.add(req.requirementId());
             }
         }
 
@@ -501,21 +490,15 @@ public class LatexReportService {
             sb.append("\\paragraph{Requirements without UCs:}\n");
             sb.append("\\begin{itemize}[leftmargin=*]\n");
             for (String reqId : reqsWithoutUC) {
-                List<TraceabilityEntry> reqEntries = byReq.get(reqId);
-                String reqName = reqEntries.stream()
-                        .filter(e -> e.requirementName() != null && !e.requirementName().isBlank())
-                        .map(TraceabilityEntry::requirementName)
-                        .findFirst().orElse("");
-                String gap = reqEntries.stream()
-                        .filter(e -> e.gap() != null && !e.gap().isBlank())
-                        .map(TraceabilityEntry::gap)
-                        .findFirst().orElse("No associated use case found.");
+                RequirementEntry req = requirements.stream()
+                        .filter(r -> r.requirementId().equals(reqId))
+                        .findFirst().orElse(null);
+                String reqName = req != null ? req.requirementName() : "";
                 sb.append("  \\item \\textbf{\\hyperlink{req:%s}{%s}".formatted(reqId, escapeLatex(reqId)));
-                if (!reqName.isBlank()) {
+                if (reqName != null && !reqName.isBlank()) {
                     sb.append(" --- %s".formatted(escapeLatex(reqName)));
                 }
-                sb.append(":} %s $\\rightarrow$ Define a UC or mark as out of scope.\n".formatted(
-                        escapeLatex(gap)));
+                sb.append(":} No associated use case found. $\\rightarrow$ Define a UC or mark as out of scope.\n");
             }
             sb.append("\\end{itemize}\n\n");
         }
@@ -524,12 +507,20 @@ public class LatexReportService {
     }
 
     /**
-     * Section 4: Use Cases — all UCs shown, split by with/without template.
-     * UCs with templates are rendered as centered tables.
-     * Internal structural issues appear below each UC table.
+     * Section 4: Use Cases — all UCs from UseCaseExtractorAgent, split by
+     * with/without template based on actual hasTemplate flag.
+     * UCs with templates are rendered as centered tables with template fields.
+     * Issues from other agents appear below each UC if applicable.
      */
     private String buildUseCaseSection(AuditReport report, String fullText) {
         var sb = new StringBuilder();
+
+        List<UseCaseEntry> useCases = report.useCases();
+
+        if (useCases == null || useCases.isEmpty()) {
+            sb.append("No use cases were identifiable in the document.\n\n");
+            return sb.toString();
+        }
 
         // Collect issues that reference specific UCs (exclude Testing and Architecture)
         Map<String, List<AuditIssue>> issuesByUC = new LinkedHashMap<>();
@@ -544,74 +535,83 @@ public class LatexReportService {
             }
         }
 
-        // Build list of all UCs from traceability matrix
-        Set<String> allUCs = new LinkedHashSet<>();
-        if (report.traceabilityMatrix() != null) {
-            for (TraceabilityEntry e : report.traceabilityMatrix()) {
-                if (e.useCaseId() != null && !e.useCaseId().isBlank()) {
-                    allUCs.add(e.useCaseId());
-                }
-            }
-        }
-        allUCs.addAll(issuesByUC.keySet());
-
-        if (allUCs.isEmpty()) {
-            sb.append("No use cases were identifiable in the document.\n\n");
-            return sb.toString();
-        }
-
-        sb.append("The document describes \\textbf{%d use case(s)}. ".formatted(allUCs.size()));
+        sb.append("The document describes \\textbf{%d use case(s)}. ".formatted(useCases.size()));
         sb.append("This section analyzes the \\emph{internal quality} of each use case ");
         sb.append("(completeness, clarity, consistency of the template). ");
         sb.append("Traceability to requirements and tests is analyzed in Section~\\ref{sec:traceability}.\n\n");
 
-        // Determine which UCs have templates (have issues referencing them, meaning they were analyzed in detail)
-        // UCs with issues are considered "with template" since the agent found structural details to analyze
-        Set<String> ucsWithIssues = new LinkedHashSet<>(issuesByUC.keySet());
+        // Split by hasTemplate
+        List<UseCaseEntry> withTemplate = useCases.stream().filter(UseCaseEntry::hasTemplate).toList();
+        List<UseCaseEntry> withoutTemplate = useCases.stream().filter(uc -> !uc.hasTemplate()).toList();
 
-        // ── UCs with structured template (those that have issues = analyzed in detail) ──
-        if (!ucsWithIssues.isEmpty()) {
+        // ── UCs with structured template ──
+        if (!withTemplate.isEmpty()) {
             sb.append("\\subsection{Use Cases with Structured Template}\n\n");
 
-            for (String ucId : allUCs) {
-                List<AuditIssue> ucIssues = issuesByUC.getOrDefault(ucId, List.of());
-                if (ucIssues.isEmpty()) continue;
+            for (UseCaseEntry uc : withTemplate) {
+                String heading = uc.useCaseName() != null && !uc.useCaseName().isBlank()
+                        ? "%s --- %s".formatted(uc.useCaseId(), uc.useCaseName())
+                        : uc.useCaseId();
 
-                String ucName = findUcName(report, ucId);
-                String heading = ucName.isBlank() ? ucId : "%s --- %s".formatted(ucId, ucName);
-
-                // Render UC template as centered table
+                // Render UC template as centered table with actual template fields
                 sb.append("\\begin{center}\n");
-                sb.append("\\hypertarget{uc:%s}{}\n".formatted(ucId));
+                sb.append("\\hypertarget{uc:%s}{}\n".formatted(uc.useCaseId()));
                 sb.append("\\begin{tabular}{l >{\\RaggedRight\\arraybackslash}p{10cm}}\n");
                 sb.append("\\toprule\n");
                 sb.append("\\multicolumn{2}{l}{\\textbf{%s}} \\\\\n".formatted(escapeLatex(heading)));
+                sb.append("\\midrule\n");
+
+                if (uc.actor() != null && !uc.actor().isBlank()) {
+                    sb.append("\\textbf{Actor} & %s \\\\\n".formatted(escapeLatex(uc.actor())));
+                }
+                if (uc.preconditions() != null && !uc.preconditions().isBlank()) {
+                    sb.append("\\textbf{Preconditions} & %s \\\\\n".formatted(escapeLatex(uc.preconditions())));
+                }
+                if (uc.mainFlow() != null && !uc.mainFlow().isBlank()) {
+                    sb.append("\\textbf{Main Flow} & %s \\\\\n".formatted(escapeLatex(uc.mainFlow())));
+                }
+                if (uc.postconditions() != null && !uc.postconditions().isBlank()) {
+                    sb.append("\\textbf{Postconditions} & %s \\\\\n".formatted(escapeLatex(uc.postconditions())));
+                }
+                if (uc.alternativeFlows() != null && !uc.alternativeFlows().isBlank()) {
+                    sb.append("\\textbf{Alt. Flows} & %s \\\\\n".formatted(escapeLatex(uc.alternativeFlows())));
+                }
+
                 sb.append("\\bottomrule\n");
                 sb.append("\\end{tabular}\n");
                 sb.append("\\end{center}\n\n");
 
-                // Issues below the table
-                sb.append(buildUcIssueList(ucIssues));
+                // Issues below the table (if any)
+                List<AuditIssue> ucIssues = issuesByUC.getOrDefault(uc.useCaseId(), List.of());
+                if (!ucIssues.isEmpty()) {
+                    sb.append(buildUcIssueList(ucIssues));
+                }
             }
         }
 
         // ── UCs without structured template ──
-        List<String> ucsWithoutTemplate = allUCs.stream()
-                .filter(uc -> !ucsWithIssues.contains(uc))
-                .toList();
-
-        if (!ucsWithoutTemplate.isEmpty()) {
+        if (!withoutTemplate.isEmpty()) {
             sb.append("\\subsection{Use Cases without Structured Template}\n");
             sb.append("The following use cases are referenced in diagrams or narrative but lack ");
             sb.append("a formal template description. A missing template does not necessarily ");
             sb.append("indicate an error if the UC is sufficiently simple.\n\n");
             sb.append("\\begin{itemize}[nosep]\n");
-            for (String ucId : ucsWithoutTemplate) {
-                String ucName = findUcName(report, ucId);
-                String label = ucName.isBlank() ? ucId : "%s --- %s".formatted(ucId, ucName);
-                sb.append("  \\item \\hypertarget{uc:%s}{%s}\n".formatted(ucId, escapeLatex(label)));
+            for (UseCaseEntry uc : withoutTemplate) {
+                String label = uc.useCaseName() != null && !uc.useCaseName().isBlank()
+                        ? "%s --- %s".formatted(uc.useCaseId(), uc.useCaseName())
+                        : uc.useCaseId();
+                sb.append("  \\item \\hypertarget{uc:%s}{%s}\n".formatted(uc.useCaseId(), escapeLatex(label)));
             }
             sb.append("\\end{itemize}\n\n");
+
+            // Issues for UCs without template (if any)
+            for (UseCaseEntry uc : withoutTemplate) {
+                List<AuditIssue> ucIssues = issuesByUC.getOrDefault(uc.useCaseId(), List.of());
+                if (!ucIssues.isEmpty()) {
+                    sb.append("\\paragraph{%s:}\n".formatted(escapeLatex(uc.useCaseId())));
+                    sb.append(buildUcIssueList(ucIssues));
+                }
+            }
         }
 
         return sb.toString();
@@ -689,32 +689,47 @@ public class LatexReportService {
     /**
      * Section 6: Traceability Analysis — requirement-based table mapping
      * Requirement → UC → Design → Test. UCs without a parent requirement
-     * are listed separately at the bottom.
+     * (orphan UCs) are shown with "---" in the Requirement column.
+     * Also includes UCs from the extractor not present in the traceability matrix.
      */
     private String buildTraceabilitySection(AuditReport report) {
         var sb = new StringBuilder();
 
-        if (report.traceabilityMatrix() == null || report.traceabilityMatrix().isEmpty()) {
+        List<TraceabilityEntry> entries = report.traceabilityMatrix() != null
+                ? report.traceabilityMatrix() : List.of();
+        List<UseCaseEntry> extractedUCs = report.useCases() != null
+                ? report.useCases() : List.of();
+
+        if (entries.isEmpty() && extractedUCs.isEmpty()) {
             sb.append("No traceability data was extracted from the document.\n\n");
             return sb.toString();
         }
-
-        List<TraceabilityEntry> entries = report.traceabilityMatrix();
 
         sb.append("This section maps each requirement to its use cases, design references, ");
         sb.append("and test coverage.\n\n");
 
         // Group by requirementId (preserve order)
         Map<String, List<TraceabilityEntry>> byReq = new LinkedHashMap<>();
-        List<TraceabilityEntry> orphanUCs = new ArrayList<>();
+        List<TraceabilityEntry> orphanUCEntries = new ArrayList<>();
 
         for (TraceabilityEntry e : entries) {
             if (e.requirementId() != null && !e.requirementId().isBlank()) {
                 byReq.computeIfAbsent(e.requirementId(), k -> new ArrayList<>()).add(e);
             } else {
-                orphanUCs.add(e);
+                orphanUCEntries.add(e);
             }
         }
+
+        // Find UCs from extractor that are NOT in the traceability matrix at all
+        Set<String> ucsInMatrix = new HashSet<>();
+        for (TraceabilityEntry e : entries) {
+            if (e.useCaseId() != null && !e.useCaseId().isBlank()) {
+                ucsInMatrix.add(e.useCaseId());
+            }
+        }
+        List<UseCaseEntry> missingUCs = extractedUCs.stream()
+                .filter(uc -> !ucsInMatrix.contains(uc.useCaseId()))
+                .toList();
 
         // Build table
         sb.append("\\begin{center}\n");
@@ -748,21 +763,26 @@ public class LatexReportService {
             sb.append("\\midrule\n");
         }
 
-        // Orphan UCs (no parent requirement)
-        if (!orphanUCs.isEmpty()) {
-            sb.append("\\midrule\n");
-            sb.append("\\multicolumn{4}{l}{\\textit{Use cases without a parent requirement:}} \\\\\n");
-            sb.append("\\midrule\n");
+        // Orphan UCs from traceability matrix (no parent requirement)
+        boolean hasOrphans = !orphanUCEntries.isEmpty() || !missingUCs.isEmpty();
+        if (hasOrphans) {
+            if (!byReq.isEmpty()) {
+                sb.append("\\midrule\n");
+            }
 
-            for (TraceabilityEntry e : orphanUCs) {
+            for (TraceabilityEntry e : orphanUCEntries) {
                 if (e.useCaseId() != null && !e.useCaseId().isBlank()) {
-                    String ucName = e.useCaseName() != null && !e.useCaseName().isBlank()
-                            ? " (%s)".formatted(escapeLatex(e.useCaseName())) : "";
-                    sb.append("--- & \\hyperlink{uc:%s}{%s}%s & %s & %s \\\\\n".formatted(
-                            e.useCaseId(), e.useCaseId(), ucName,
+                    sb.append("--- & \\hyperlink{uc:%s}{%s} & %s & %s \\\\\n".formatted(
+                            e.useCaseId(), e.useCaseId(),
                             e.hasDesign() ? "\\ok" : "\\nok",
                             e.hasTest() ? "\\ok" : "\\nok"));
                 }
+            }
+
+            // UCs from extractor not in traceability — show with unknown design/test
+            for (UseCaseEntry uc : missingUCs) {
+                sb.append("--- & \\hyperlink{uc:%s}{%s} & ? & ? \\\\\n".formatted(
+                        uc.useCaseId(), escapeLatex(uc.useCaseId())));
             }
         }
 
@@ -776,9 +796,10 @@ public class LatexReportService {
                 .filter(e -> e.getValue().stream()
                         .anyMatch(t -> t.useCaseId() != null && !t.useCaseId().isBlank()))
                 .count();
-        long totalUCEntries = entries.stream()
+        long totalUCsInMatrix = ucsInMatrix.size();
+        long totalUCsOrphan = orphanUCEntries.stream()
                 .filter(e -> e.useCaseId() != null && !e.useCaseId().isBlank())
-                .count();
+                .count() + missingUCs.size();
         long fullyCovered = entries.stream()
                 .filter(e -> e.useCaseId() != null && !e.useCaseId().isBlank()
                         && e.hasDesign() && e.hasTest())
@@ -787,12 +808,14 @@ public class LatexReportService {
                 .filter(e -> e.useCaseId() != null && !e.useCaseId().isBlank() && !e.hasTest())
                 .count();
 
-        sb.append("\\textbf{Summary:} Of %d requirements, %d are linked to UCs, %d have no UC. "
-                .formatted(totalReqs, reqsWithUC, totalReqs - reqsWithUC));
-        sb.append("Of %d UCs, %d have full coverage (design + test), %d lack test coverage"
-                .formatted(totalUCEntries, fullyCovered, missingTest));
-        if (!orphanUCs.isEmpty()) {
-            sb.append(", %d have no parent requirement".formatted(orphanUCs.size()));
+        if (totalReqs > 0) {
+            sb.append("\\textbf{Summary:} Of %d requirements, %d are linked to UCs, %d have no UC. "
+                    .formatted(totalReqs, reqsWithUC, totalReqs - reqsWithUC));
+        }
+        sb.append("Of %d UCs in the traceability matrix, %d have full coverage (design + test), %d lack test coverage"
+                .formatted(totalUCsInMatrix, fullyCovered, missingTest));
+        if (totalUCsOrphan > 0) {
+            sb.append(", %d have no parent requirement".formatted(totalUCsOrphan));
         }
         sb.append(".\n\n");
 
@@ -874,23 +897,6 @@ public class LatexReportService {
     }
 
     /**
-     * Generates a concrete suggestion for improving traceability of a specific UC.
-     */
-    private String buildTraceabilitySuggestion(TraceabilityEntry entry) {
-        if (!entry.hasDesign() && !entry.hasTest()) {
-            return "Add both a design reference (e.g., class diagram, sequence diagram, or component description) "
-                    + "and at least one test case that verifies this use case.";
-        } else if (!entry.hasDesign()) {
-            return "Add a design reference that maps this use case to its implementing components "
-                    + "(e.g., controller, service, DAO classes or a sequence diagram).";
-        } else if (!entry.hasTest()) {
-            return "Add at least one test case (unit or integration) that explicitly verifies "
-                    + "the behavior described in this use case.";
-        }
-        return "";
-    }
-
-    /**
      * Section 3: Architecture Analysis — LLM description + architecture issues.
      */
     private String buildArchitectureSection(AuditReport report, String fullText) {
@@ -941,18 +947,6 @@ public class LatexReportService {
         };
     }
 
-    // ═══════════════════════════════════════════════════
-    // Helpers
-    // ═══════════════════════════════════════════════════
-
-    private String findUcName(AuditReport report, String ucId) {
-        if (report.traceabilityMatrix() == null) return "";
-        return report.traceabilityMatrix().stream()
-                .filter(e -> e.useCaseId().equalsIgnoreCase(ucId))
-                .map(TraceabilityEntry::useCaseName)
-                .findFirst().orElse("");
-    }
-
     /**
      * Extracts all UC references from an issue's text fields.
      */
@@ -968,28 +962,6 @@ public class LatexReportService {
             ucs.add("UC-" + matcher.group(1));
         }
         return ucs;
-    }
-
-    /**
-     * Truncates a verbatim quote to a maximum length, cutting at a sentence boundary if possible.
-     */
-    private String truncateQuote(String quote, int maxLen) {
-        if (quote == null || quote.length() <= maxLen) return quote;
-
-        // Try to cut at a sentence boundary
-        String prefix = quote.substring(0, maxLen);
-        int cutPoint = prefix.lastIndexOf(". ");
-        if (cutPoint > maxLen / 2) {
-            return quote.substring(0, cutPoint + 1) + " [...]";
-        }
-
-        // Otherwise cut at word boundary
-        int spaceIdx = prefix.lastIndexOf(' ');
-        if (spaceIdx > maxLen / 2) {
-            return quote.substring(0, spaceIdx) + " [...]";
-        }
-
-        return quote.substring(0, maxLen) + " [...]";
     }
 
     // ═══════════════════════════════════════════════════
@@ -1016,12 +988,6 @@ public class LatexReportService {
         if (text.length() <= maxChars) return text;
         log.warn("Text truncated from {} to {} characters for the prompt", text.length(), maxChars);
         return text.substring(0, maxChars) + "\n\n[... text truncated ...]";
-    }
-
-    private String truncateText(String text, int maxLen) {
-        if (text == null) return "";
-        if (text.length() <= maxLen) return text;
-        return text.substring(0, maxLen - 3) + "...";
     }
 
     /**

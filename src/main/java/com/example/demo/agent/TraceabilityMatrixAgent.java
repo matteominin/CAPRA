@@ -1,7 +1,6 @@
 package com.example.demo.agent;
 
-import com.example.demo.model.TraceabilityEntry;
-import com.example.demo.model.TraceabilityMatrixResponse;
+import com.example.demo.model.*;
 import com.example.demo.service.ResilientLlmCaller;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -10,55 +9,64 @@ import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
+import java.util.stream.Collectors;
 
 /**
- * Agent that automatically builds a traceability matrix
- * Requirements/UC → Design → Test, highlighting coverage gaps.
+ * Agent that builds the traceability matrix by mapping already-extracted
+ * Use Cases and Requirements to Design and Test references.
  * <p>
- * This is one of the most important checks in SWE: students
- * almost never produce a complete matrix.
+ * This agent receives pre-extracted UC and Requirement lists so it can
+ * focus solely on finding design/test coverage for each UC.
  */
 @Service
 public class TraceabilityMatrixAgent {
 
     private static final Logger log = LoggerFactory.getLogger(TraceabilityMatrixAgent.class);
 
-        private static final String SYSTEM_PROMPT = """
-                        You are a Software Engineering expert specialized in requirements traceability.
-            
-                        TASK:
-                        Analyze the document and build a TRACEABILITY MATRIX that maps:
-                        Requirement → Use Case → Design (classes, components, patterns) → Test Case
-            
-                        For each Use Case present in the document:
-                        1. Identify its ID and name (e.g., UC-1 - User Registration)
-                        2. Identify the PARENT REQUIREMENT that this UC implements (e.g., RF-1, REQ-1, R1).
-                           Use the requirement ID and name as they appear in the document.
-                           If the UC has no parent requirement, set requirementId and requirementName to null.
-                        3. Check if the document contains a related design/architecture description
-                             (e.g., class, controller, DAO, sequence diagram implementing it)
-                        4. Check if the document contains a test case verifying that use case
-                        5. If design OR test is missing, report the gap
-            
-                        ALSO: if a REQUIREMENT exists in the document but has NO associated Use Case,
-                        create an entry with the requirement's ID and name, useCaseId=null, useCaseName=null,
-                        hasDesign=false, hasTest=false, and gap describing the missing UC.
-            
-                        RULES:
-                        - List ALL Use Cases AND all requirements found in the document
-                        - requirementId: the ID of the parent requirement (e.g., RF-1, REQ-1). null if none.
-                        - requirementName: the name of the parent requirement. null if none.
-                        - hasDesign = true if there is at least one architectural reference (class, controller, DAO, diagram)
-                        - hasTest = true if there is at least one test case covering it
-                        - designRef: briefly describe WHAT implements it (e.g., "ReservationController, DAO pattern")
-                            If not found, write "No reference found"
-                        - testRef: briefly describe WHICH test covers it (e.g., "testReservation_Success")
-                            If not found, write "No test found"
-                        - gap: describe in 1 sentence the main gap. If all covered, EMPTY string "".
-                        - Write in ENGLISH. Do NOT translate document-specific use case names,
-                          identifiers, class names, or any term exactly as it appears in the document.
-                        - DO NOT invent Use Cases or Requirements that do not exist in the document
-                        """;
+    private static final String SYSTEM_PROMPT = """
+            You are a Software Engineering expert specialized in requirements traceability.
+
+            TASK:
+            You are given a list of USE CASES and a list of REQUIREMENTS that have
+            already been extracted from the document. Your job is to build a
+            TRACEABILITY MATRIX that maps:
+              Requirement → Use Case → Design → Test
+
+            For EACH USE CASE provided below:
+            1. Find which REQUIREMENT(s) it implements (match by name, description, or explicit reference)
+            2. Check if the document contains a design/architecture reference for this UC
+               (class, controller, DAO, sequence diagram, component implementing it)
+            3. Check if the document contains a test case verifying this UC
+
+            For each REQUIREMENT that has NO associated UC, create an entry with
+            useCaseId=null, useCaseName=null, hasDesign=false, hasTest=false.
+
+            OUTPUT:
+            Return one entry per row. If a requirement links to multiple UCs,
+            create one entry per UC with the same requirementId.
+
+            RULES:
+            - Use EXACTLY the IDs provided (do NOT rename or re-number them)
+            - requirementId: from the provided REQUIREMENTS list. null if the UC has no parent req.
+            - requirementName: from the provided REQUIREMENTS list. null if no parent req.
+            - useCaseId: from the provided USE CASES list. null for reqs with no UC.
+            - useCaseName: from the provided USE CASES list.
+            - hasDesign = true if there is at least one design/architecture reference
+            - hasTest = true if there is at least one test case
+            - designRef: brief description of what implements it, or "No reference found"
+            - testRef: brief description of which test covers it, or "No test found"
+            - gap: 1-sentence gap description. Empty string "" if fully covered.
+            - Write in ENGLISH. Preserve document identifiers exactly.
+            - DO NOT invent UCs or Requirements beyond the provided lists.
+
+            CRITICAL — REQUIREMENTS vs USE CASES:
+            - The REQUIREMENTS list and USE CASES list are SEPARATE inputs.
+            - If the REQUIREMENTS list is empty, then ALL UCs have no parent requirement:
+              set requirementId=null and requirementName=null for every UC entry.
+            - Do NOT use UC-x as requirementId. Requirements have IDs like RF-1, REQ-01, R1.
+            - Create ONE entry per UC. If a UC has no parent requirement, still create an entry
+              with requirementId=null.
+            """;
 
     private final ChatClient chatClient;
 
@@ -67,28 +75,46 @@ public class TraceabilityMatrixAgent {
     }
 
     /**
-     * Analyzes the document and produces the traceability matrix.
+     * Builds the traceability matrix using pre-extracted UCs and Requirements.
      *
      * @param documentText full text of the document
+     * @param useCases     extracted use cases
+     * @param requirements extracted requirements
      * @return list of traceability matrix entries
      */
-    public List<TraceabilityEntry> buildMatrix(String documentText) {
-        log.info("TraceabilityMatrixAgent: building traceability matrix...");
+    public List<TraceabilityEntry> buildMatrix(String documentText,
+                                                List<UseCaseEntry> useCases,
+                                                List<RequirementEntry> requirements) {
+        log.info("TraceabilityMatrixAgent: building traceability matrix with {} UCs and {} Reqs...",
+                useCases.size(), requirements.size());
+
+        // Build context strings for the LLM
+        String ucContext = useCases.stream()
+                .map(uc -> "  - %s: %s".formatted(uc.useCaseId(), uc.useCaseName()))
+                .collect(Collectors.joining("\n"));
+
+        String reqContext = requirements.stream()
+                .map(r -> "  - %s: %s".formatted(r.requirementId(), r.requirementName()))
+                .collect(Collectors.joining("\n"));
 
         try {
             TraceabilityMatrixResponse response = ResilientLlmCaller.callEntity(
                     chatClient, SYSTEM_PROMPT,
                     """
-                            Analyze the following Software Engineering document and build
-                            a complete traceability matrix UC/Requirements -> Design -> Test.
-                            Write all output in ENGLISH. Do NOT translate document-specific identifiers,
-                            use case names, or any term exactly as it appears in the document.
-                            
-                            DOCUMENT:
-                            ===BEGIN===
+                            Build the traceability matrix for the following document.
+
+                            === EXTRACTED USE CASES ===
                             %s
-                            ===END===
-                            """.formatted(documentText),
+
+                            === EXTRACTED REQUIREMENTS ===
+                            %s
+
+                            === DOCUMENT ===
+                            %s
+                            """.formatted(
+                            ucContext.isEmpty() ? "(none found)" : ucContext,
+                            reqContext.isEmpty() ? "(none found)" : reqContext,
+                            documentText),
                     TraceabilityMatrixResponse.class, "TraceabilityMatrixAgent");
 
             if (response != null && response.entries() != null) {
@@ -98,7 +124,7 @@ public class TraceabilityMatrixAgent {
                         .filter(e -> !e.hasDesign() || !e.hasTest())
                         .count();
 
-                log.info("TraceabilityMatrixAgent: {} UC/requisiti trovati — {}/{} con design, {}/{} con test, {} gap",
+                log.info("TraceabilityMatrixAgent: {} entries — {}/{} with design, {}/{} with test, {} gaps",
                         response.entries().size(), withDesign, response.entries().size(),
                         withTest, response.entries().size(), gaps);
                 return response.entries();
