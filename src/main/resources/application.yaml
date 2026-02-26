@@ -44,7 +44,3 @@ audit:
   latex:
     output-dir: ./reports
     pdflatex-path: pdflatex
-
-logging:
-  level:
-    com.example.demo: DEBUG

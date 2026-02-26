@@ -21,7 +21,7 @@ import java.util.stream.Stream;
  * Pipeline:
  * 1. Text extraction (Flask)
  * 2a. Parallel extraction: UseCaseExtractor + RequirementExtractor
- * 2b. Parallel analysis: Requirements + TestAuditor + Architecture + Features + Glossary
+ * 2b. Parallel analysis: Requirements + TestAuditor + Architecture + Features
  * 3. Traceability mapping (uses extracted UCs/Reqs as context)
  * 4. Evidence Anchoring (fuzzy match, NO LLM)
  * 5. Confidence filtering (discard confidence &lt; threshold)
@@ -80,7 +80,6 @@ public class MultiAgentOrchestrator {
         this.architectureAgent = architectureAgent;
         this.featureCheckAgent = featureCheckAgent;
         this.traceabilityAgent = traceabilityAgent;
-        this.glossaryAgent = glossaryAgent;
         this.useCaseExtractorAgent = useCaseExtractorAgent;
         this.requirementExtractorAgent = requirementExtractorAgent;
         this.evidenceAnchoring = evidenceAnchoring;
@@ -113,8 +112,6 @@ public class MultiAgentOrchestrator {
                 CompletableFuture.supplyAsync(() -> architectureAgent.analyze(fullText), agentExecutor);
         CompletableFuture<List<FeatureCoverage>> featureFuture =
                 CompletableFuture.supplyAsync(() -> featureCheckAgent.checkFeatures(fullText), agentExecutor);
-        CompletableFuture<List<GlossaryIssue>> glossaryFuture =
-                CompletableFuture.supplyAsync(() -> glossaryAgent.analyze(fullText), agentExecutor);
         CompletableFuture<List<UseCaseEntry>> ucFuture =
                 CompletableFuture.supplyAsync(() -> useCaseExtractorAgent.extract(fullText), agentExecutor);
         CompletableFuture<List<RequirementEntry>> reqExtractFuture =
@@ -124,15 +121,13 @@ public class MultiAgentOrchestrator {
         AgentResponse testResponse = testFuture.join();
         AgentResponse archResponse = archFuture.join();
         List<FeatureCoverage> featureCoverage = featureFuture.join();
-        List<GlossaryIssue> glossaryIssues = glossaryFuture.join();
         List<UseCaseEntry> extractedUCs = ucFuture.join();
         List<RequirementEntry> extractedReqs = reqExtractFuture.join();
 
         log.info("[2/9] Analysis completed — REQ: {} issues, TST: {} issues, ARCH: {} issues, " +
-                        "Features: {}, Glossary: {} issues, UCs extracted: {}, Reqs extracted: {}",
+                        "Features: {}, UCs extracted: {}, Reqs extracted: {}",
                 reqResponse.issues().size(), testResponse.issues().size(), archResponse.issues().size(),
-                featureCoverage.size(), glossaryIssues.size(),
-                extractedUCs.size(), extractedReqs.size());
+                featureCoverage.size(), extractedUCs.size(), extractedReqs.size());
 
         // ── Step 3: Traceability mapping (uses extracted UCs/Reqs as context) ──
         log.info("[3/9] Building traceability matrix (with {} UCs and {} Reqs as context)...",
@@ -180,7 +175,7 @@ public class MultiAgentOrchestrator {
         // ── Step 8: Report generation ──
         log.info("[8/9] Generating LaTeX report...");
         AuditReport report = AuditReport.from(filename, normalizedIssues,
-                featureCoverage, traceability, glossaryIssues, extractedUCs, extractedReqs);
+                featureCoverage, traceability, extractedUCs, extractedReqs);
         Path texFile = latexReportService.generateReport(report, fullText,
                 missingFeatures, featureCoverage, extractionCompleteness);
         log.info("[8/9] LaTeX report generated: {}", texFile);
@@ -196,9 +191,9 @@ public class MultiAgentOrchestrator {
         }
 
         log.info("═══════════════════════════════════════════════");
-        log.info("Pipeline completed: {} issues, {} features ({} missing), {} traceability, {} glossary, {} UCs, {} Reqs",
+        log.info("Pipeline completed: {} issues, {} features ({} missing), {} traceability, {} UCs, {} Reqs",
                 report.totalIssues(), featureCoverage.size(), missingFeatures.size(),
-                traceability.size(), glossaryIssues.size(), extractedUCs.size(), extractedReqs.size());
+                traceability.size(), extractedUCs.size(), extractedReqs.size());
         log.info("═══════════════════════════════════════════════");
 
         return new AuditResult(report, texFile, pdfFile);

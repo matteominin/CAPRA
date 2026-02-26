@@ -1,301 +1,278 @@
 # SWE-Audit-Agent
 
-A multi-agent LLM system that automatically audits Software Engineering PDF documents (theses, project reports) and produces a detailed LaTeX/PDF audit report.
+Sistema multi-agent che analizza documenti PDF di progetti di Ingegneria del Software e genera un report strutturato (`.tex` + `.pdf`).
 
-Built with **Java 25**, **Spring Boot 4.0.3**, **Spring AI 2.0.0-M2**, **OpenAI GPT-5.1**, and **Anthropic Haiku 4.5**.
-
----
-
-## Architecture Overview
-
-The system implements a **7-step pipeline** orchestrated by `MultiAgentOrchestrator`. Five specialized agents analyze the document in parallel, followed by evidence verification, confidence filtering, cross-verification, LaTeX report generation, and PDF compilation.
-
-```
-                         ┌─────────────────────┐
-                         │   PDF Upload (REST)  │
-                         └──────────┬──────────┘
-                                    │
-                         ┌──────────▼──────────┐
-                    [1]  │  Flask PDF Extractor │  (Python + OpenAI Vision)
-                         └──────────┬──────────┘
-                                    │ full text
-              ┌─────────────────────┼─────────────────────┐
-              │                     │                     │
-     ┌────────▼────────┐  ┌────────▼────────┐  ┌────────▼────────┐
-[2]  │ RequirementsAgent│  │ TestAuditorAgent│  │FeatureCheckAgent│
-     │   (GPT-5.1)     │  │   (GPT-5.1)     │  │   (GPT-5.1)     │
-     └────────┬────────┘  └────────┬────────┘  └────────┬────────┘
-              │                     │                     │
-              │  ┌──────────────────┼──────────────────┐  │
-              │  │                  │                   │  │
-              │  │  ┌───────────────▼──────────────┐   │  │
-              │  │  │ TraceabilityMatrixAgent       │   │  │
-              │  │  │   (GPT-5.1)                  │   │  │
-              │  │  └───────────────┬──────────────┘   │  │
-              │  │                  │                   │  │
-              │  │  ┌───────────────▼──────────────┐   │  │
-              │  │  │ GlossaryConsistencyAgent      │   │  │
-              │  │  │   (GPT-5.1)                  │   │  │
-              │  │  └───────────────┬──────────────┘   │  │
-              │  │                  │                   │  │
-     ┌────────▼──▼──────────────────▼──────────────────▼──▼────────┐
-[3]  │              Evidence Anchoring Service                      │
-     │      (Fuzzy string matching — NO LLM, pure algorithms)      │
-     └────────────────────────────┬────────────────────────────────┘
-                                  │
-     ┌────────────────────────────▼────────────────────────────────┐
-[4]  │              Confidence Filtering (threshold ≥ 0.65)        │
-     └────────────────────────────┬────────────────────────────────┘
-                                  │
-     ┌────────────────────────────▼────────────────────────────────┐
-[5]  │              ConsistencyManager (GPT-5.1)                   │
-     │    Cross-verification + deduplication + renumbering          │
-     └────────────────────────────┬────────────────────────────────┘
-                                  │
-     ┌────────────────────────────▼────────────────────────────────┐
-[6]  │              LaTeX Report Service (Haiku 4.5 + fallback)    │
-     └────────────────────────────┬────────────────────────────────┘
-                                  │
-     ┌────────────────────────────▼────────────────────────────────┐
-[7]  │              pdflatex Compilation (2-pass)                   │
-     └─────────────────────────────────────────────────────────────┘
-```
+Stack principale:
+- Java 25
+- Spring Boot 4.0.3
+- Spring AI 2.0.0-M2
+- OpenAI GPT-5.1 (analisi)
+- Anthropic Haiku 4.5 (sezioni narrative del report)
 
 ---
 
-## Step-by-Step Pipeline
+## Pipeline reale (codice attuale)
 
-### Step 1 — Text Extraction (`DocumentIngestionService`)
+La pipeline è orchestrata da `MultiAgentOrchestrator` ed è composta da 9 step:
 
-The uploaded PDF is sent to an external **Flask microservice** (running on port 5001) that uses **PyMuPDF** for text extraction and **OpenAI Vision** for image descriptions. The service returns the complete textual representation of the document, including descriptions of diagrams and figures.
+1. **Text extraction** (`DocumentIngestionService`) via servizio Flask (`/extract`, mode=full)
+2. **Analisi parallela** (6 agenti + 2 extractor):
+   - `RequirementsAgent`
+   - `TestAuditorAgent`
+   - `ArchitectureAgent`
+   - `FeatureCheckAgent`
+   - `UseCaseExtractorAgent`
+   - `RequirementExtractorAgent`
+3. **Traceability mapping** (`TraceabilityMatrixAgent`) con UCs/Requirements estratti
+4. **Evidence Anchoring** (`EvidenceAnchoringService`, non-LLM)
+5. **Confidence filtering** (`confidence >= 0.75`)
+6. **Cross-verification LLM** (`ConsistencyManager`)
+7. **Normalizzazione report** (`ReportNormalizer`)
+8. **Generazione LaTeX** (`LatexReportService`)
+9. **Compilazione PDF** (`LatexCompilerService`, `pdflatex`)
 
-- **Timeout**: 5 minutes read, 30 seconds connect
-- **Endpoint**: `POST /extract` with `mode=full`
-
-### Step 2 — Parallel Agent Analysis
-
-Five agents run **concurrently** using Java virtual threads (`Executors.newVirtualThreadPerTaskExecutor()`). Each agent receives the full document text and uses **GPT-5.1** (temperature=0.0, seed=42) for deterministic analysis.
-
-#### 2a. RequirementsAgent
-
-**Purpose**: Identifies issues in requirements, use cases, and business logic.
-
-**What it checks**:
-- Completeness of each requirement (pre/post-conditions, alternative flows)
-- Ambiguities, contradictions, and missing requirements
-- Consistency between functional and non-functional requirements
-- Use cases without corresponding tests
-- Coherence between diagrams and textual descriptions
-
-**Output**: List of `AuditIssue` records with fields: `id` (REQ-001 format), `severity` (HIGH/MEDIUM/LOW), `description`, `pageReference`, `quote` (verbatim from document), `category`, `recommendation`, `confidenceScore`.
-
-**Anti-hallucination rules**: The agent is instructed to copy quotes **verbatim** from the document. It must not paraphrase, and must not report issues with confidence below 0.7. Each recommendation must be concrete and actionable, not generic.
-
-#### 2b. TestAuditorAgent
-
-**Purpose**: Audits the test suite and design consistency.
-
-**What it checks**:
-- Critical requirements without corresponding test cases (coverage gaps)
-- Inconsistencies between declared design principles (e.g. SOLID) and actual class descriptions
-- Missing tests for alternative flows and error conditions
-- Requirements-to-test traceability
-
-**Output**: List of `AuditIssue` records (TST-001 format).
-
-**Deduplication**: Instructed not to report issues already covered by RequirementsAgent. Focuses exclusively on testing gaps and architectural consistency.
-
-#### 2c. FeatureCheckAgent
-
-**Purpose**: Verifies the presence of **expected features** loaded from MongoDB.
-
-**How it works**:
-1. Loads feature definitions from the `summary_features` collection (MongoDB). Each feature has a name, description, and a checklist of criteria.
-2. Sends the document + feature checklist to the LLM.
-3. For each feature, the LLM evaluates which checklist items are satisfied and returns:
-   - `status`: PRESENT (≥80% checklist), PARTIAL (30-79%), ABSENT (<30%)
-   - `coverageScore`: percentage of satisfied items
-   - `matchedItems` / `totalItems`
-   - `evidence`: brief explanation of what was found or missing
-
-**Output**: List of `FeatureCoverage` records.
-
-#### 2d. TraceabilityMatrixAgent
-
-**Purpose**: Builds a **traceability matrix** mapping Requirements/UC → Design → Tests.
-
-**What it produces**: For each Use Case or Functional Requirement found in the document:
-- Whether a related design/architecture description exists (`hasDesign`)
-- Whether a related test case exists (`hasTest`)
-- Brief references to the design and test artifacts
-- Gap description if anything is missing
-
-**Output**: List of `TraceabilityEntry` records.
-
-This is one of the most valuable checks — students rarely produce a complete traceability matrix.
-
-#### 2e. GlossaryConsistencyAgent
-
-**Purpose**: Detects **terminological inconsistencies** in the document.
-
-**What it checks**:
-- Involuntary synonyms (same entity called by different names)
-- Undefined technical terms
-- Inconsistent acronyms
-- Mixed Italian/English usage for the same concept
-
-**Output**: List of `GlossaryIssue` records with `termGroup`, `variants`, `severity` (MAJOR/MINOR), and `suggestion`.
+Parametri globali rilevanti:
+- `CONFIDENCE_THRESHOLD = 0.75` (filtro finale issue nel pipeline orchestrator)
+- ordinamento deterministico issue: `category -> severity.ordinal -> pageReference -> description`
+- esecuzione parallela agenti tramite virtual threads (`Executors.newVirtualThreadPerTaskExecutor()`)
 
 ---
 
-### Step 3 — Evidence Anchoring (`EvidenceAnchoringService`)
+## Agente per agente
 
-This is the **most effective anti-hallucination measure**. It is a purely algorithmic step (NO LLM involved).
+### 1) `RequirementsAgent`
+- **Obiettivo**: trovare issue su requisiti/UC/business logic.
+- **Prompt (sintesi tecnica)**:
+  - calibrazione "academic-lenient": penalizza falsi positivi da over-auditing
+  - richiede `quote` verbatim e `confidenceScore >= 0.8`
+  - richiede grouping sistemico (evitare issue duplicati su UC diversi)
+  - target qualitativo nel prompt: max ~5-6 issue.
+- **Output**: `IssuesResponse` (`AuditIssue` con id `REQ-*`).
+- **Post-processing locale**: nessuno dentro l’agente (solo chiamata `ResilientLlmCaller`).
 
-For each issue produced by RequirementsAgent and TestAuditorAgent, the service verifies that the `quote` field actually exists in the document using **fuzzy string matching**:
+### 2) `TestAuditorAgent`
+- **Obiettivo**: audit testing/coverage/traceability req→test.
+- **Prompt (sintesi tecnica)**:
+  - stessa calibrazione accademica conservativa
+  - evita finding su practice enterprise (load/mutation/CI/CD)
+  - impone `quote` verbatim e `confidenceScore >= 0.8`
+  - dedup rispetto a issue di requirements già noti.
+- **Output**: `IssuesResponse` (`AuditIssue` con id `TST-*`).
+- **Post-processing locale**: nessuno.
 
-1. **Exact match**: checks if the normalized quote is a substring of the document.
-2. **Trigram overlap pre-filter**: quickly discards dissimilar windows.
-3. **Sliding window + normalized Levenshtein distance**: finds the best-matching passage.
-4. **LCS ratio fallback**: for very long strings, uses word-level Longest Common Subsequence.
+### 3) `ArchitectureAgent`
+- **Obiettivo**: individuare problemi architetturali importanti.
+- **Prompt (sintesi tecnica)**:
+  - verifica coerenza descrizione architettura vs implementazione
+  - evita segnalazioni su gap non rilevanti per contesto universitario
+  - impone `quote` verbatim e `confidenceScore >= 0.8`
+  - target qualitativo nel prompt: max ~3-4 issue.
+- **Output**: `IssuesResponse` (`AuditIssue` con id `ARCH-*`).
+- **Post-processing locale**: nessuno.
 
-**Decision logic**:
-- **Similarity < 0.45** → issue is **discarded** (quote was likely hallucinated)
-- **Similarity 0.45–0.70** → issue is kept but confidence is **penalized** proportionally
-- **Similarity ≥ 0.70** → confidence is **boosted** (up to +15%)
-- **No quote provided** → confidence is halved (50% penalty)
-- **Quote too short (<15 chars)** → confidence reduced by 30%
+### 4) `FeatureCheckAgent`
+- **Obiettivo**: verificare checklist feature attese da MongoDB (`summary_features`).
+- **Prompt (sintesi tecnica)**:
+  - per ogni feature calcola `status`, `coverageScore`, `matchedItems`, `totalItems`, `evidence`
+  - soglie hard-coded nel prompt:
+    - `PRESENT` se checklist soddisfatta >= 80%
+    - `PARTIAL` se tra 30% e 79%
+    - `ABSENT` se < 30%
+  - output in EN, no traduzione di identificatori del documento.
+- **Output**: `FeatureCoverageResponse`.
+- **Post-processing locale**: logging distribuzione present/partial/absent.
+- **Normalizzazione robustezza parsing**:
+  - `FeatureCoverage` ha deserializer custom (`FeatureCoverageDeserializer`)
+  - tollera JSON LLM con chiavi duplicate (`matchedItems`, `totalItems`) senza mandare in errore la pipeline.
 
-### Step 4 — Confidence Filtering
+### 5) `UseCaseExtractorAgent`
+- **Obiettivo**: estrarre **tutti** gli UC dal documento (diagrammi, template, testo).
+- **Prompt (sintesi tecnica)**:
+  - exhaustive extraction (diagrammi + template + testo + appendici, include sub-UC)
+  - `hasTemplate=true` solo se ci sono campi strutturati (actor/preconditions/main flow/...)
+  - dedup richiesto a livello LLM (diagramma+template -> una sola entry).
+- **Output**: `UseCaseExtractorResponse` (`List<UseCaseEntry>`).
+- **Post-processing locale**: nessuno.
 
-Issues with `confidenceScore < 0.65` are discarded. This threshold works in conjunction with the agent-level floor of 0.7 and the Evidence Anchoring adjustments to produce a highly reliable final set.
+### 6) `RequirementExtractorAgent`
+- **Obiettivo**: estrarre requisiti funzionali (espliciti o inferiti).
+- **Prompt (sintesi tecnica)**:
+  - preferisci ID espliciti (`RF-1`, `REQ-01`, ...)
+  - se assenti, inferisci `REQ-1`, `REQ-2`, ...
+  - mai usare `UC-*` come requirement ID
+  - nome requisito corto (3-5 parole), user-facing
+  - target nel prompt: 8-15 requisiti se evidenza sufficiente.
+- **Output**: `RequirementExtractorResponse` (`List<RequirementEntry>`).
+- **Normalizzazioni locali**:
+  1. filtro euristico requisiti troppo tecnici (`session`, `validazione/validation`, `regex`, `dao`, `jdbc`, `database connection`, `persistence`)
+  2. `normalizeRequirementIds(...)`:
+     - dedup ID
+     - progressione numerica senza collisioni
+     - correzione ID invalidi/duplicati in `REQ-N`
+     - regex ID validi: `(?i)^([A-Z]+-?)(\\d+)$`.
 
-### Step 5 — Cross-Verification (`ConsistencyManager`)
+### 7) `TraceabilityMatrixAgent`
+- **Obiettivo**: costruire matrice `Requirement -> UC -> Design -> Test`.
+- **Prompt (sintesi tecnica)**:
+  - usa le liste UC/Requirements già estratte
+  - una riga per UC; righe specifiche per requirements senza UC.
+- **Output**: `TraceabilityMatrixResponse` (`List<TraceabilityEntry>`).
+- **Post-processing locale**: nessuno.
 
-A **meta-agent** (GPT-5.1) receives the full document text and the surviving issues. For each issue, it:
-
-1. **Searches** for the quoted text in the original document
-2. **Verifies** the quote exists (even with minor formatting variations)
-3. **Validates** that the page reference is plausible
-4. **Evaluates** whether the issue describes a real problem or is a false positive
-5. **Detects duplicates**: if two issues describe the same problem from different perspectives, only the most complete one is confirmed
-
-**Post-processing**:
-- Verified issues are **renumbered** sequentially by category prefix: `REQ-001`, `TST-001`, `ARCH-001`, `ISS-001`
-- Deterministic ordering: category → severity ordinal → page reference → description
-
-### Step 6 — LaTeX Report Generation (`LatexReportService`)
-
-Uses **Anthropic Haiku 4.5** (temperature=0.0, max-tokens=8192) with fallback to GPT-5.1 for generating narrative LaTeX sections.
-
-**Report sections**:
-
-| # | Section | Generation Method |
-|---|---------|-------------------|
-| 1 | Document Context | LLM-generated (extracts project objective, use cases, requirements, architecture, testing strategy) |
-| 2 | Executive Summary | LLM-generated (problem patterns, critical areas, overall quality assessment, top 3 priority actions) |
-| 3 | Strengths | LLM-generated (3-6 specific positive aspects with evidence) |
-| 4 | Feature Coverage | Programmatic table from `FeatureCoverage` data (status, coverage %, evidence) |
-| 5 | Summary Table | Programmatic Category × Severity cross-tabulation |
-| 6 | Issue Detail | Programmatic per-category, per-UC grouping with confidence badges and cross-references |
-| 7 | Priority Recommendations | Programmatic — HIGH-severity issues only, one line each |
-| 8 | Traceability Matrix | Programmatic table with ✓/✗ indicators and gap descriptions |
-| 9 | Terminological Consistency | Programmatic table of glossary issues with severity and suggestions |
-
-**LLM output sanitization** (`sanitizeLlmLatex`): Strips dangerous commands (`\documentclass`, `\usepackage`, `\begin{document}`, `\input`, `\include`, markdown code fences) from LLM-generated LaTeX to prevent template breakage.
-
-**LaTeX escaping**: Two modes — `escapeLatex()` collapses newlines (for use inside `\textbf{}` etc.) and `escapeLatexBlock()` preserves paragraphs (for standalone text). All special characters (`& % $ # _ { } ~ ^ \`) are properly escaped.
-
-### Step 7 — PDF Compilation (`LatexCompilerService`)
-
-Compiles the `.tex` file to PDF using **pdflatex**:
-- **Two passes**: first generates the `.toc`, second includes it
-- **Timeout**: 120 seconds per pass
-- **Mode**: `-interaction=nonstopmode -halt-on-error`
-- Verifies pdflatex availability before compilation
-- If compilation fails, the `.tex` file is still returned to the user
+### 8) `ConsistencyManager` (meta-agent)
+- **Obiettivo**: verificare issue candidati e ridurre falsi positivi/duplicati.
+- **Prompt (sintesi tecnica)**:
+  - verifica quote nel testo originale
+  - corregge se necessario, merge issue duplicate/simili
+  - approccio conservativo (meglio false negative che false positive).
+- **Output**: `VerificationResponse` (`List<VerifiedIssue>`).
+- **Post-processing locale**:
+  - tiene solo `verified=true`
+  - `renumber(...)` deterministico per categoria:
+    - `REQ-*`, `TST-*`, `ARCH-*`, fallback `ISS-*`.
+  - formato finale ID: `%s-%03d`.
 
 ---
 
-## Resilience Features
+## Normalizzazioni e post-processing globali
 
-### ResilientLlmCaller
+### `ResilientLlmCaller`
+Tutte le chiamate LLM passano da qui:
+- parsing JSON lenient (trailing comma, single quotes, ecc.)
+- retry automatico (max 3 tentativi totali: tentativo iniziale + 2 retry)
+- backoff lineare implementato: 2000ms, 4000ms
+- serializzazione/parse typed con `BeanOutputConverter`.
 
-All LLM calls go through `ResilientLlmCaller.callEntity()` which provides:
-- **Lenient JSON parsing**: tolerates trailing commas, Java-style comments, single quotes, unquoted field names
-- **Automatic retry**: up to 3 attempts with exponential backoff (2s, 4s)
-- **Structured output**: uses Spring AI's `BeanOutputConverter` to enforce typed JSON responses
+### `EvidenceAnchoringService` (non-LLM)
+- verifica quote con fuzzy match sul documento (normalizzazione testo + matching approssimato)
+- soglie:
+  - `MIN_SIMILARITY = 0.45` (issue sotto soglia scartata)
+  - `BOOST_THRESHOLD = 0.70`
+- regole confidence:
+  - quote assente: `confidence * 0.5`
+  - quote troppo corta (`<15` char normalizzati): `confidence * 0.7`
+  - match in [0.45, 0.70): penalità proporzionale fino al 30%
+  - match >= 0.70: boost proporzionale (max clamp a 1.0)
+- matching strategy:
+  1. exact match
+  2. trigram overlap prefilter
+  3. sliding window + normalized Levenshtein
+  4. fallback LCS ratio su testi lunghi.
 
-### Determinism
+### `ReportNormalizer`
+- assicura `shortDescription`
+- penalizza issue senza quote
+- ordina per confidence/severity
+- limita issue a `MAX_ISSUES = 7` (hard cap)
+- tronca `shortDescription` a `MAX_SHORT_DESC_LENGTH = 120`
+- produce metriche di completeness
+- estrae solo feature `PARTIAL/ABSENT` per sezione missing
+- warning log-only su keyword critiche senza HIGH issue (non forza escalation severità).
 
-- All LLM calls use `temperature=0.0` and `seed=42`
-- Issues are sorted deterministically before any processing step
-- ID renumbering follows a stable comparator: category → severity → page → description
+### Regole aggiuntive di rendering in `LatexReportService`
+- dedup UC template vs non-template (ID + chiave semantica nome)
+- separazione UC diagrammatici (`summary/crud/diagram*`)
+- esclusione UC diagrammatici dai link operativi requirement→UC in Requirements/Traceability
+- dedup righe traceability e statistiche calcolate su UC normalizzati unici.
 
 ---
 
-## REST API
+## Criteri quantitativi di inclusione/esclusione issue
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `POST` | `/api/analyze` | Upload PDF → returns compiled PDF report (or `.tex` fallback) |
-| `POST` | `/api/analyze/json` | Upload PDF → returns JSON audit report |
-| `GET`  | `/api/health` | Health check (verifies Flask extractor availability) |
+I candidati issue passano queste fasi:
+1. output agenti (prompt richiede tipicamente `confidenceScore >= 0.8`)
+2. `EvidenceAnchoringService` (scarto su similarità quote)
+3. filtro orchestrator: `confidence >= 0.75`
+4. `ConsistencyManager` (`verified=true`)
+5. `ReportNormalizer` (cap massimo 7 issue).
+
+Questo schema privilegia precisione (meno false positive) rispetto al recall.
 
 ---
 
-## Configuration (`application.yaml`)
+## Report LaTeX generato
+
+`LatexReportService` produce queste sezioni:
+1. Project Overview (narrativo LLM)
+2. Requirements Analysis (tabella requisiti + UC link)
+3. Architecture Analysis
+4. Use Case Analysis
+5. Testing Analysis
+6. Traceability Analysis
+7. Missing Features
+
+Il servizio usa Haiku 4.5 come primaria e GPT-5.1 come fallback per sezioni narrative.
+
+Dettagli tecnici di generazione:
+- output `.tex` scritto in `./reports/<timestamp>/audit-report.tex`
+- compilazione PDF in due passaggi (`pdflatex`)
+- in caso di errore di compilazione viene comunque restituito il `.tex`.
+
+---
+
+## API REST
+
+| Method | Endpoint | Descrizione |
+|---|---|---|
+| `POST` | `/api/analyze` | Carica PDF e restituisce report PDF (fallback `.tex`) |
+| `POST` | `/api/analyze/json` | Carica PDF e restituisce `AuditReport` JSON |
+| `GET` | `/api/health` | Health check servizio extractor Flask |
+
+---
+
+## Configurazione principale (`application.yaml`)
 
 ```yaml
+spring:
+  ai:
+    openai:
+      chat:
+        options:
+          model: gpt-5.1
+          max-completion-tokens: 16000
+          temperature: 0.0
+          seed: 42
+    anthropic:
+      chat:
+        options:
+          model: claude-haiku-4-5-20251001
+          max-tokens: 8192
+          temperature: 0.0
+
 audit:
   pdf-service:
     base-url: http://localhost:5001
   latex:
     output-dir: ./reports
     pdflatex-path: pdflatex
-
-spring:
-  ai:
-    openai:
-      api-key: ${OPENAI_API_KEY}
-      chat:
-        options:
-          model: gpt-5.1
-          temperature: 0.0
-          seed: 42
-          max-tokens: 16000
-    anthropic:
-      api-key: ${ANTHROPIC_API_KEY}
-      chat:
-        options:
-          model: claude-haiku-4-5-20250401
-          temperature: 0.0
-          max-tokens: 8192
-  data:
-    mongodb:
-      uri: mongodb://localhost:27017/features_repo
-
-server:
-  port: 8085
 ```
+
+Dettagli runtime importanti:
+- `server.port = 8085`
+- `audit.pdf-service.base-url = http://localhost:5001`
+- `DocumentIngestionService` timeout: connect 30s, read 5m
+- `multipart` max size: 50MB.
 
 ---
 
-## Prerequisites
+## Prerequisiti
 
-- **Java 25**
-- **MongoDB** running on `localhost:27017` with a `features_repo` database containing a `summary_features` collection
-- **Flask PDF extractor** running on port 5001
-- **pdflatex** installed (TeX Live or MacTeX)
-- **API keys**: `OPENAI_API_KEY` and `ANTHROPIC_API_KEY` environment variables
+- Java 25
+- MongoDB locale (`features_repo`, collection `summary_features`)
+- servizio Flask extractor su porta 5001
+- `pdflatex` installato
+- variabili ambiente: `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`
 
-## Running
+---
+
+## Avvio
 
 ```bash
 ./mvnw spring-boot:run
 ```
 
-Then upload a PDF:
+Esempio chiamata:
+
 ```bash
 curl -X POST http://localhost:8085/api/analyze \
   -F "file=@document.pdf" \

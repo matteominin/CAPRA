@@ -1,5 +1,7 @@
 package com.example.demo.model;
 
+import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
+
 /**
  * Result of verifying a single feature in the document.
  *
@@ -11,6 +13,7 @@ package com.example.demo.model;
  * @param matchedItems  Number of checklist items satisfied
  * @param totalItems    Total number of checklist items
  */
+@JsonDeserialize(using = FeatureCoverageDeserializer.class)
 public record FeatureCoverage(
         String featureName,
         String category,

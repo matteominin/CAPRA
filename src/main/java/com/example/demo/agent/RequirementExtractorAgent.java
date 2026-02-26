@@ -9,7 +9,12 @@ import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 
+import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * Dedicated agent for extracting ALL functional requirements from the document.
@@ -21,46 +26,25 @@ public class RequirementExtractorAgent {
 
     private static final Logger log = LoggerFactory.getLogger(RequirementExtractorAgent.class);
 
-        private static final String SYSTEM_PROMPT = """
+    private static final String SYSTEM_PROMPT = """
             You are a Software Engineering document analyst.
 
             TASK:
-            Extract ONLY the most important, high-level functional requirements that define the main goals, features, and user-facing behaviors of the system.
-            Requirements are typically listed in a dedicated section (e.g.,
-            "Requisiti Funzionali", "Functional Requirements", "Requisiti",
-            "Specifica dei Requisiti", etc.) and have IDs like RF-1, RF-2,
-            REQ-01, R1, FR-1, etc.
+            Extract functional requirements from a SWE project document.
+            Return JSON only, compliant with the provided schema.
 
-            CRITICAL — PRIORITIZE CORE REQUIREMENTS:
-            - Extract ONLY the most important, high-level requirements essential for the system's purpose, main workflows, and user value.
-            - Ignore or omit low-level, technical, or implementation-specific requirements (e.g., DAO class usage, regex validation, error alert details, internal class names).
-            - Focus on requirements that are essential for the system’s main features and user-facing behaviors.
-            - Limit the output to the 10–15 most critical requirements. If more exist, select those with the highest impact on system functionality.
-            - For each, provide a concise requirementId (REQ-1, REQ-2, ...) and a clear, user-oriented requirementName.
+            PRIORITY RULES:
+            - Prefer explicit requirement IDs if present in the document (e.g., RF-1, REQ-01, R1, FR-1).
+            - If explicit IDs are missing, infer requirements from obligations/behaviors in the text and assign IDs as REQ-1, REQ-2, ...
+            - If explicit IDs exist and you add inferred ones, continue progressive numbering without reusing already used numbers.
+            - Never use UC-* as requirement IDs.
 
-            REQUIREMENT NAME:
-            - The requirementName must be a short summary (max 3–5 words), not a long sentence.
-            - Use only the most essential keywords (e.g., "User registration", "Book loan management", "Comment system").
-            - If the document uses Italian, keep the name in Italian, but keep it short.
-
-            INFERRED REQUIREMENTS:
-            - If the document does NOT contain a formal requirements section, you MUST infer requirements from the text.
-            - Extract requirements from any part of the document where system obligations, constraints, or expected behaviors are described (e.g., "The system must...", "Users can...", "It is required that...").
-            - Assign a unique requirementId for each inferred requirement, using the format REQ-1, REQ-2, REQ-3, etc.
-            - Do NOT use UC-x, UC-1, UC-2, etc. as requirement IDs.
-
-            TABLE FORMAT:
-            - Output the requirements in a table with wider columns for readability.
-            - Columns: requirementId | requirementName | (optionally: linkedUseCases)
-            - Make sure the table is easy to read and not cramped.
-
-            RULES:
-            - Extract ONLY the most important requirements — do not include minor or technical details
-            - Assign REQ-x IDs in order of importance or appearance
-            - Do NOT generate IDs like "REQ-login" or "REQ-registrazione"
-            - Do NOT use UC-x, UC-1, UC-2, etc. as requirement IDs
-            - If the document uses Italian, keep the name in Italian (max 3–5 words)
-            - If no explicit requirements section or IDs exist, infer requirements from the text
+            CONTENT RULES:
+            - Extract high-value functional requirements (main goals, user-facing workflows, constraints affecting behavior).
+            - Exclude purely technical implementation details (class names, DAO internals, regex specifics).
+            - requirementName must be concise (max 3-5 words), user-oriented, and in the document language.
+            - Produce 8 to 15 requirements when enough evidence exists in the document.
+            - Do not return an empty list if the document clearly describes system behavior.
             """;
 
     private final ChatClient chatClient;
@@ -82,9 +66,10 @@ public class RequirementExtractorAgent {
             RequirementExtractorResponse response = ResilientLlmCaller.callEntity(
                     chatClient, SYSTEM_PROMPT,
                     """
-                            Extract ALL functional requirements from the following Software Engineering document.
-                            Be EXHAUSTIVE: check all sections, tables, appendices.
-                            Use the EXACT requirement IDs from the document (e.g., RF-1, not REQ-login).
+                            Extract functional requirements from the following Software Engineering document.
+                            Return JSON only using the expected schema.
+                            If formal IDs are absent, infer IDs as REQ-1, REQ-2, ... .
+                            Never use UC-* as requirement IDs.
 
                             DOCUMENT:
                             ===BEGIN===
@@ -94,9 +79,13 @@ public class RequirementExtractorAgent {
                     RequirementExtractorResponse.class, "RequirementExtractorAgent");
 
             if (response != null && response.requirements() != null) {
+                List<RequirementEntry> functionalOnly = response.requirements().stream()
+                        .filter(r -> !isLikelyTechnicalRequirement(r.requirementName()))
+                        .toList();
+                List<RequirementEntry> normalized = normalizeRequirementIds(functionalOnly);
                 log.info("RequirementExtractorAgent: {} requirements extracted",
-                        response.requirements().size());
-                return response.requirements();
+                        normalized.size());
+                return normalized;
             }
 
             log.warn("RequirementExtractorAgent: null response from LLM");
@@ -107,4 +96,99 @@ public class RequirementExtractorAgent {
             return List.of();
         }
     }
+
+    private static final Pattern ID_WITH_NUMBER = Pattern.compile("(?i)^([A-Z]+-?)(\\d+)$");
+    private static final Pattern UC_ID = Pattern.compile("(?i)^UC[- ].*");
+
+    /**
+     * Ensures requirement IDs are unique and progressive.
+     * Existing valid IDs are preserved; missing/invalid/duplicate IDs become REQ-{N},
+     * where N starts from max already used number + 1.
+     */
+    private List<RequirementEntry> normalizeRequirementIds(List<RequirementEntry> requirements) {
+        if (requirements == null || requirements.isEmpty()) return List.of();
+
+        Set<Integer> usedNumbers = new HashSet<>();
+        Set<String> usedIds = new HashSet<>();
+
+        // 1) Reserve valid existing IDs and numbers.
+        for (RequirementEntry req : requirements) {
+            String id = sanitize(req.requirementId());
+            if (!isValidExistingId(id)) continue;
+            Matcher matcher = ID_WITH_NUMBER.matcher(id.toUpperCase());
+            if (!matcher.matches()) continue;
+            int number = Integer.parseInt(matcher.group(2));
+            if (usedIds.add(id.toUpperCase())) {
+                usedNumbers.add(number);
+            }
+        }
+
+        int nextNumber = usedNumbers.stream().mapToInt(Integer::intValue).max().orElse(0) + 1;
+        List<RequirementEntry> normalized = new ArrayList<>(requirements.size());
+        Set<String> seenInOrder = new HashSet<>();
+
+        // 2) Normalize each requirement, generating IDs when needed.
+        for (RequirementEntry req : requirements) {
+            String originalId = sanitize(req.requirementId());
+            String name = sanitize(req.requirementName());
+
+            String finalId;
+            if (isValidExistingId(originalId) && !seenInOrder.contains(originalId.toUpperCase())) {
+                // First occurrence of a valid ID: keep as-is.
+                finalId = originalId;
+                seenInOrder.add(finalId.toUpperCase());
+            } else if (isValidExistingId(originalId) && seenInOrder.contains(originalId.toUpperCase())) {
+                // Duplicate ID in output -> assign a fresh progressive one.
+                while (usedNumbers.contains(nextNumber)) nextNumber++;
+                finalId = "REQ-" + nextNumber++;
+                usedIds.add(finalId.toUpperCase());
+                usedNumbers.add(extractTrailingNumber(finalId));
+            } else {
+                // Missing/invalid ID (including UC-*) -> assign progressive ID.
+                while (usedNumbers.contains(nextNumber)) nextNumber++;
+                finalId = "REQ-" + nextNumber++;
+                usedIds.add(finalId.toUpperCase());
+                usedNumbers.add(extractTrailingNumber(finalId));
+            }
+
+            normalized.add(new RequirementEntry(
+                    finalId,
+                    name.isBlank() ? "Requirement " + extractTrailingNumber(finalId) : name
+            ));
+        }
+
+        return normalized;
+    }
+
+    private boolean isValidExistingId(String id) {
+        if (id.isBlank()) return false;
+        if (UC_ID.matcher(id).matches()) return false;
+        return ID_WITH_NUMBER.matcher(id.toUpperCase()).matches();
+    }
+
+    private int extractTrailingNumber(String id) {
+        Matcher m = ID_WITH_NUMBER.matcher(id.toUpperCase());
+        return m.matches() ? Integer.parseInt(m.group(2)) : 0;
+    }
+
+    private String sanitize(String s) {
+        return s == null ? "" : s.trim();
+    }
+
+    /**
+     * Heuristic filter to avoid technical/internal requirements in the functional list.
+     */
+    private boolean isLikelyTechnicalRequirement(String requirementName) {
+        String name = sanitize(requirementName).toLowerCase();
+        if (name.isBlank()) return false;
+        return name.contains("session")
+                || name.contains("validazione")
+                || name.contains("validation")
+                || name.contains("regex")
+                || name.contains("dao")
+                || name.contains("jdbc")
+                || name.contains("database connection")
+                || name.contains("persistence");
+    }
+
 }

@@ -118,6 +118,7 @@ public class LatexReportService {
             - Do NOT describe architectural patterns (MVC, REST, microservices, etc.).
             - Do NOT discuss databases, deployment, or infrastructure.
             - Instead, describe the user-facing functionalities and the domain logic.
+            - If technical terms appear in source text, summarize them as user-facing capabilities instead.
                 
             DO NOT discuss the quality of the document.
             DO NOT mention audit findings, issues, or recommendations.
@@ -439,7 +440,8 @@ public class LatexReportService {
         if (report.traceabilityMatrix() != null) {
             for (TraceabilityEntry te : report.traceabilityMatrix()) {
                 if (te.requirementId() != null && !te.requirementId().isBlank()
-                        && te.useCaseId() != null && !te.useCaseId().isBlank()) {
+                        && te.useCaseId() != null && !te.useCaseId().isBlank()
+                        && isOperationalUcId(te.useCaseId())) {
                     reqToUCs.computeIfAbsent(te.requirementId(), k -> new ArrayList<>())
                             .add(te.useCaseId());
                 }
@@ -523,13 +525,19 @@ public class LatexReportService {
         }
 
         // Collect issues that reference specific UCs (exclude Testing and Architecture)
+        // and separate cross-UC issues to avoid repeating the same item under many UCs.
         Map<String, List<AuditIssue>> issuesByUC = new LinkedHashMap<>();
+        List<AuditIssue> crossUcIssues = new ArrayList<>();
         for (AuditIssue issue : report.issues()) {
             if ("Testing".equalsIgnoreCase(issue.category())
                     || "Architecture".equalsIgnoreCase(issue.category())) {
                 continue;
             }
             Set<String> ucs = extractAllUCs(issue);
+            if (ucs.size() > 1) {
+                crossUcIssues.add(issue);
+                continue;
+            }
             for (String uc : ucs) {
                 issuesByUC.computeIfAbsent(uc, k -> new ArrayList<>()).add(issue);
             }
@@ -540,9 +548,35 @@ public class LatexReportService {
         sb.append("(completeness, clarity, consistency of the template). ");
         sb.append("Traceability to requirements and tests is analyzed in Section~\\ref{sec:traceability}.\n\n");
 
-        // Split by hasTemplate
+        // Split by hasTemplate and deduplicate by ID + semantic key:
+        // if a UC appears both in diagrammatic form and with a full template,
+        // keep it only in the "with template" group.
         List<UseCaseEntry> withTemplate = useCases.stream().filter(UseCaseEntry::hasTemplate).toList();
-        List<UseCaseEntry> withoutTemplate = useCases.stream().filter(uc -> !uc.hasTemplate()).toList();
+        Set<String> templatedIds = withTemplate.stream()
+                .map(UseCaseEntry::useCaseId)
+                .filter(Objects::nonNull)
+                .map(this::normalizeUcId)
+                .filter(s -> !s.isBlank())
+                .collect(java.util.stream.Collectors.toSet());
+        Set<String> templatedSemanticKeys = withTemplate.stream()
+                .map(this::ucSemanticKey)
+                .filter(s -> !s.isBlank())
+                .collect(java.util.stream.Collectors.toSet());
+
+        List<UseCaseEntry> withoutTemplate = useCases.stream()
+                .filter(uc -> !uc.hasTemplate())
+                .filter(uc -> {
+                    String idKey = normalizeUcId(uc.useCaseId());
+                    String semanticKey = ucSemanticKey(uc);
+                    return !templatedIds.contains(idKey) && !templatedSemanticKeys.contains(semanticKey);
+                })
+                .toList();
+        List<UseCaseEntry> diagrammaticUCs = withoutTemplate.stream()
+                .filter(this::isDiagrammaticUseCase)
+                .toList();
+        List<UseCaseEntry> operationalWithoutTemplate = withoutTemplate.stream()
+                .filter(uc -> !isDiagrammaticUseCase(uc))
+                .toList();
 
         // ── UCs with structured template ──
         if (!withTemplate.isEmpty()) {
@@ -590,28 +624,47 @@ public class LatexReportService {
         }
 
         // ── UCs without structured template ──
-        if (!withoutTemplate.isEmpty()) {
+        if (!operationalWithoutTemplate.isEmpty()) {
             sb.append("\\subsection{Use Cases without Structured Template}\n");
             sb.append("The following use cases are referenced in diagrams or narrative but lack ");
             sb.append("a formal template description. A missing template does not necessarily ");
             sb.append("indicate an error if the UC is sufficiently simple.\n\n");
             sb.append("\\begin{itemize}[nosep]\n");
-            for (UseCaseEntry uc : withoutTemplate) {
-                String label = uc.useCaseName() != null && !uc.useCaseName().isBlank()
-                        ? "%s --- %s".formatted(uc.useCaseId(), uc.useCaseName())
-                        : uc.useCaseId();
+            for (UseCaseEntry uc : operationalWithoutTemplate) {
+                String shortDesc = buildShortUcDescription(uc);
+                String label = "%s --- %s".formatted(uc.useCaseId(), shortDesc);
                 sb.append("  \\item \\hypertarget{uc:%s}{%s}\n".formatted(uc.useCaseId(), escapeLatex(label)));
             }
             sb.append("\\end{itemize}\n\n");
 
             // Issues for UCs without template (if any)
-            for (UseCaseEntry uc : withoutTemplate) {
+            for (UseCaseEntry uc : operationalWithoutTemplate) {
                 List<AuditIssue> ucIssues = issuesByUC.getOrDefault(uc.useCaseId(), List.of());
                 if (!ucIssues.isEmpty()) {
                     sb.append("\\paragraph{%s:}\n".formatted(escapeLatex(uc.useCaseId())));
                     sb.append(buildUcIssueList(ucIssues));
                 }
             }
+        }
+
+        if (!diagrammaticUCs.isEmpty()) {
+            sb.append("\\subsection{Diagrammatic UC References (Not Operational UCs)}\n");
+            sb.append("These references appear in diagrams as aggregation or decomposition nodes ");
+            sb.append("and are reported separately to avoid inflating the count of operational use cases.\n\n");
+            sb.append("\\begin{itemize}[nosep]\n");
+            for (UseCaseEntry uc : diagrammaticUCs) {
+                String label = uc.useCaseName() != null && !uc.useCaseName().isBlank()
+                        ? "%s --- %s".formatted(uc.useCaseId(), uc.useCaseName())
+                        : uc.useCaseId();
+                sb.append("  \\item \\hypertarget{uc:%s}{%s}\n".formatted(uc.useCaseId(), escapeLatex(label)));
+            }
+            sb.append("\\end{itemize}\n\n");
+        }
+
+        if (!crossUcIssues.isEmpty()) {
+            sb.append("\\subsection{Cross-UC Issues}\n");
+            sb.append("The following findings apply to multiple use cases and are listed once to avoid duplication.\n\n");
+            sb.append(buildUcIssueList(crossUcIssues));
         }
 
         return sb.toString();
@@ -708,11 +761,22 @@ public class LatexReportService {
         sb.append("This section maps each requirement to its use cases, design references, ");
         sb.append("and test coverage.\n\n");
 
+        Set<String> extractedRequirementIds = report.requirements() != null
+                ? report.requirements().stream()
+                .map(RequirementEntry::requirementId)
+                .filter(Objects::nonNull)
+                .filter(s -> !s.isBlank())
+                .collect(java.util.stream.Collectors.toSet())
+                : Set.of();
+
         // Group by requirementId (preserve order)
         Map<String, List<TraceabilityEntry>> byReq = new LinkedHashMap<>();
         List<TraceabilityEntry> orphanUCEntries = new ArrayList<>();
 
         for (TraceabilityEntry e : entries) {
+            if (e.useCaseId() != null && !e.useCaseId().isBlank() && !isOperationalUcId(e.useCaseId())) {
+                continue;
+            }
             if (e.requirementId() != null && !e.requirementId().isBlank()) {
                 byReq.computeIfAbsent(e.requirementId(), k -> new ArrayList<>()).add(e);
             } else {
@@ -723,21 +787,24 @@ public class LatexReportService {
         // Find UCs from extractor that are NOT in the traceability matrix at all
         Set<String> ucsInMatrix = new HashSet<>();
         for (TraceabilityEntry e : entries) {
-            if (e.useCaseId() != null && !e.useCaseId().isBlank()) {
-                ucsInMatrix.add(e.useCaseId());
+            if (e.useCaseId() != null && !e.useCaseId().isBlank() && isOperationalUcId(e.useCaseId())) {
+                ucsInMatrix.add(normalizeUcId(e.useCaseId()));
             }
         }
         List<UseCaseEntry> missingUCs = extractedUCs.stream()
-                .filter(uc -> !ucsInMatrix.contains(uc.useCaseId()))
+                .filter(uc -> isOperationalUcId(uc.useCaseId()))
+                .filter(uc -> !ucsInMatrix.contains(normalizeUcId(uc.useCaseId())))
                 .toList();
 
         // Build table
         sb.append("\\begin{center}\n");
-        sb.append("\\begin{longtable}{l l c c}\n");
+        sb.append("\\begin{longtable}{l c l c c}\n");
         sb.append("\\toprule\n");
-        sb.append("\\textbf{Requirement} & \\textbf{UC} & \\textbf{Design} & \\textbf{Test} \\\\\n");
+        sb.append("\\textbf{Requirement} & \\textbf{Source} & \\textbf{UC} & \\textbf{Design} & \\textbf{Test} \\\\\n");
         sb.append("\\midrule\n");
         sb.append("\\endhead\n\n");
+
+        Set<String> renderedUcKeys = new HashSet<>();
 
         // Entries grouped by requirement
         for (var entry : byReq.entrySet()) {
@@ -746,18 +813,26 @@ public class LatexReportService {
 
             boolean first = true;
             for (TraceabilityEntry e : reqEntries) {
+                String ucKey = normalizeUcId(e.useCaseId());
+                String source = extractedRequirementIds.contains(reqId) ? "\\textsc{explicit}" : "\\textsc{inferred}";
                 String reqCol = first ? "\\hyperlink{req:%s}{%s}".formatted(reqId, escapeLatex(reqId)) : "";
+                String sourceCol = first ? source : "";
                 first = false;
 
                 if (e.useCaseId() != null && !e.useCaseId().isBlank()) {
-                    sb.append("%s & \\hyperlink{uc:%s}{%s} & %s & %s \\\\\n".formatted(
+                    // Avoid duplicate rows for the same UC under the same/global matrix output.
+                    if (!renderedUcKeys.add(ucKey)) {
+                        continue;
+                    }
+                    sb.append("%s & %s & \\hyperlink{uc:%s}{%s} & %s & %s \\\\\n".formatted(
                             reqCol,
+                            sourceCol,
                             e.useCaseId(), e.useCaseId(),
                             e.hasDesign() ? "\\ok" : "\\nok",
                             e.hasTest() ? "\\ok" : "\\nok"));
                 } else {
                     // Requirement with NO UC
-                    sb.append("%s & --- & --- & --- \\\\\n".formatted(reqCol));
+                    sb.append("%s & %s & --- & --- & --- \\\\\n".formatted(reqCol, sourceCol));
                 }
             }
             sb.append("\\midrule\n");
@@ -772,7 +847,11 @@ public class LatexReportService {
 
             for (TraceabilityEntry e : orphanUCEntries) {
                 if (e.useCaseId() != null && !e.useCaseId().isBlank()) {
-                    sb.append("--- & \\hyperlink{uc:%s}{%s} & %s & %s \\\\\n".formatted(
+                    String ucKey = normalizeUcId(e.useCaseId());
+                    if (!renderedUcKeys.add(ucKey)) {
+                        continue;
+                    }
+                    sb.append("--- & --- & \\hyperlink{uc:%s}{%s} & %s & %s \\\\\n".formatted(
                             e.useCaseId(), e.useCaseId(),
                             e.hasDesign() ? "\\ok" : "\\nok",
                             e.hasTest() ? "\\ok" : "\\nok"));
@@ -781,7 +860,11 @@ public class LatexReportService {
 
             // UCs from extractor not in traceability — show with unknown design/test
             for (UseCaseEntry uc : missingUCs) {
-                sb.append("--- & \\hyperlink{uc:%s}{%s} & ? & ? \\\\\n".formatted(
+                String ucKey = normalizeUcId(uc.useCaseId());
+                if (!renderedUcKeys.add(ucKey)) {
+                    continue;
+                }
+                sb.append("--- & --- & \\hyperlink{uc:%s}{%s} & ? & ? \\\\\n".formatted(
                         uc.useCaseId(), escapeLatex(uc.useCaseId())));
             }
         }
@@ -797,16 +880,30 @@ public class LatexReportService {
                         .anyMatch(t -> t.useCaseId() != null && !t.useCaseId().isBlank()))
                 .count();
         long totalUCsInMatrix = ucsInMatrix.size();
-        long totalUCsOrphan = orphanUCEntries.stream()
-                .filter(e -> e.useCaseId() != null && !e.useCaseId().isBlank())
-                .count() + missingUCs.size();
-        long fullyCovered = entries.stream()
-                .filter(e -> e.useCaseId() != null && !e.useCaseId().isBlank()
-                        && e.hasDesign() && e.hasTest())
+        Set<String> orphanUcKeys = orphanUCEntries.stream()
+                .map(TraceabilityEntry::useCaseId)
+                .filter(Objects::nonNull)
+                .filter(s -> !s.isBlank())
+                .map(this::normalizeUcId)
+                .collect(java.util.stream.Collectors.toSet());
+        long totalUCsOrphan = orphanUcKeys.size() + missingUCs.stream()
+                .map(UseCaseEntry::useCaseId)
+                .filter(Objects::nonNull)
+                .map(this::normalizeUcId)
+                .filter(k -> !k.isBlank() && !ucsInMatrix.contains(k))
+                .distinct()
                 .count();
-        long missingTest = entries.stream()
-                .filter(e -> e.useCaseId() != null && !e.useCaseId().isBlank() && !e.hasTest())
-                .count();
+
+        Map<String, boolean[]> coverageByUc = new LinkedHashMap<>();
+        for (TraceabilityEntry e : entries) {
+            String ucKey = normalizeUcId(e.useCaseId());
+            if (ucKey.isBlank() || !isOperationalUcId(e.useCaseId())) continue;
+            boolean[] flags = coverageByUc.computeIfAbsent(ucKey, k -> new boolean[]{false, false});
+            flags[0] = flags[0] || e.hasDesign();
+            flags[1] = flags[1] || e.hasTest();
+        }
+        long fullyCovered = coverageByUc.values().stream().filter(v -> v[0] && v[1]).count();
+        long missingTest = coverageByUc.values().stream().filter(v -> !v[1]).count();
 
         if (totalReqs > 0) {
             sb.append("\\textbf{Summary:} Of %d requirements, %d are linked to UCs, %d have no UC. "
@@ -853,8 +950,8 @@ public class LatexReportService {
             """;
 
         try {
-            return callLlmWithFallback(systemPrompt,
-                    "Describe the testing strategy in this document:\n\n" + truncateForPrompt(fullText, 30000));
+            return callLlmWithFallback(systemPrompt, "Describe the testing strategy in this document:\n\n" + fullText);
+            //return callLlmWithFallback(systemPrompt, "Describe the testing strategy in this document:\n\n" + truncateForPrompt(fullText, 30000));
         } catch (Exception e) {
             log.warn("Unable to generate testing strategy overview: {}", e.getMessage());
             return "The testing strategy overview is not available due to an error in automatic generation.";
@@ -873,8 +970,8 @@ public class LatexReportService {
             Describe:
             - What architectural pattern is used (layered, MVC, microservices, etc.)?
             - What are the main components/modules?
-            - What technologies/frameworks are used?
             - How are the components connected?
+            - Mention implementation technologies ONLY if necessary to disambiguate architecture.
             
             OUTPUT FORMAT (pure LaTeX):
             - Use normal paragraphs and \\textbf{} for emphasis
@@ -888,8 +985,8 @@ public class LatexReportService {
             """;
 
         try {
-            return callLlmWithFallback(systemPrompt,
-                    "Describe the architecture in this document:\n\n" + truncateForPrompt(fullText, 30000));
+            // return callLlmWithFallback(systemPrompt, "Describe the architecture in this document:\n\n" + truncateForPrompt(fullText, 30000));
+            return callLlmWithFallback(systemPrompt, "Describe the architecture in this document:\n\n" + fullText);
         } catch (Exception e) {
             log.warn("Unable to generate architecture overview: {}", e.getMessage());
             return "The architecture overview is not available due to an error in automatic generation.";
@@ -934,6 +1031,59 @@ public class LatexReportService {
         }
 
         return sb.toString();
+    }
+
+    private boolean isDiagrammaticUseCase(UseCaseEntry uc) {
+        String id = uc.useCaseId() != null ? uc.useCaseId().toLowerCase() : "";
+        String name = uc.useCaseName() != null ? uc.useCaseName().toLowerCase() : "";
+        return id.contains("summary") || name.contains("summary")
+                || id.contains("diagramma") || name.contains("diagramma")
+                || id.contains("diagram") || name.contains("diagram")
+                || id.contains("crud");
+    }
+
+    private boolean isOperationalUcId(String ucId) {
+        String id = normalizeUcId(ucId).toLowerCase(Locale.ROOT);
+        if (id.isBlank()) return false;
+        return !(id.contains("summary") || id.contains("diagramma")
+                || id.contains("diagram") || id.contains("crud"));
+    }
+
+    private String normalizeUcId(String ucId) {
+        if (ucId == null) return "";
+        return ucId.trim().toUpperCase(Locale.ROOT).replaceAll("\\s+", "");
+    }
+
+    private String ucSemanticKey(UseCaseEntry uc) {
+        String name = uc != null && uc.useCaseName() != null ? uc.useCaseName() : "";
+        String normalized = name.toLowerCase(Locale.ROOT)
+                .replaceAll("[^a-z0-9\\s]", " ")
+                .replaceAll("\\s+", " ")
+                .trim();
+        return normalized;
+    }
+
+    /**
+     * Builds a short UC description for entries without template.
+     * Keeps it concise and slightly different from the raw UC name.
+     */
+    private String buildShortUcDescription(UseCaseEntry uc) {
+        String raw = uc.useCaseName() != null ? uc.useCaseName().trim() : "";
+        if (raw.isBlank()) return "Brief operational description";
+
+        String cleaned = raw.replaceAll("\\s+", " ").trim();
+        String lower = cleaned.toLowerCase();
+
+        // If name already starts with an action verb, keep it short but add a tiny semantic nuance.
+        if (lower.startsWith("gest") || lower.startsWith("effett") || lower.startsWith("aggiung")
+                || lower.startsWith("modific") || lower.startsWith("rimuov") || lower.startsWith("conclud")
+                || lower.startsWith("registr") || lower.startsWith("login") || lower.startsWith("prenot")) {
+            String compact = cleaned.length() > 36 ? cleaned.substring(0, 36).trim() : cleaned;
+            return compact + " workflow";
+        }
+
+        String compact = cleaned.length() > 38 ? cleaned.substring(0, 38).trim() : cleaned;
+        return "Workflow for " + compact;
     }
 
     /**
