@@ -23,7 +23,7 @@ public class AiConfig {
 
     /**
      * ChatClient for document analysis (GPT-5.1 via OpenAI).
-     * Used by RequirementsAgent, TestAuditorAgent, and ConsistencyManager.
+     * Used by RequirementsAndUseCaseAgent, TestAuditorAgent, and ConsistencyManager.
      */
     @Bean("analysisChatClient")
     public ChatClient analysisChatClient(OpenAiChatModel openAiChatModel) {

@@ -17,7 +17,7 @@ La pipeline è orchestrata da `MultiAgentOrchestrator` ed è composta da 9 step:
 
 1. **Text extraction** (`DocumentIngestionService`) via servizio Flask (`/extract`, mode=full)
 2. **Analisi parallela** (6 agenti + 2 extractor):
-   - `RequirementsAgent`
+   - `RequirementsAndUseCaseAgent`
    - `TestAuditorAgent`
    - `ArchitectureAgent`
    - `FeatureCheckAgent`
@@ -40,7 +40,7 @@ Parametri globali rilevanti:
 
 ## Agente per agente
 
-### 1) `RequirementsAgent`
+### 1) `RequirementsAndUseCaseAgent`
 - **Obiettivo**: trovare issue su requisiti/UC/business logic.
 - **Prompt (sintesi tecnica)**:
   - calibrazione "academic-lenient": penalizza falsi positivi da over-auditing

@@ -1,0 +1,31 @@
+======================================================
+  Analysis log — 25-06-12_DonatiTimofte
+  Run date : Wed Feb 25 14:58:01 CET 2026
+======================================================
+
+------------------------------------------------------
+File             : SWE2025_Java_TrainingHub.pdf
+Timestamp        : Wed Feb 25 15:03:17 CET 2026
+HTTP status      : 200
+Content-Type     : application/pdf
+Execution time   : 316.172229s
+OpenAI tokens    : in=209980  out=20740  tot=230720
+Anthropic tokens : in=51794  out=3287  tot=55081
+
+Response headers:
+HTTP/1.1 100 
+
+HTTP/1.1 200 
+Content-Disposition: attachment; filename="audit-report.pdf"
+X-OpenAI-Input-Tokens: 209980
+X-OpenAI-Output-Tokens: 20740
+X-OpenAI-Total-Tokens: 230720
+X-Anthropic-Input-Tokens: 51794
+X-Anthropic-Output-Tokens: 3287
+X-Anthropic-Total-Tokens: 55081
+Accept-Ranges: bytes
+Content-Type: application/pdf
+Content-Length: 307217
+Date: Wed, 25 Feb 2026 14:03:17 GMT
+
+

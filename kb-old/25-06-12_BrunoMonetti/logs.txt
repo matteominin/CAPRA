@@ -1,0 +1,31 @@
+======================================================
+  Analysis log — 25-06-12_BrunoMonetti
+  Run date : Wed Feb 25 14:54:54 CET 2026
+======================================================
+
+------------------------------------------------------
+File             : Relazione_ServerTransfer.pdf
+Timestamp        : Wed Feb 25 14:58:01 CET 2026
+HTTP status      : 200
+Content-Type     : application/pdf
+Execution time   : 186.200650s
+OpenAI tokens    : in=114426  out=16905  tot=131331
+Anthropic tokens : in=32182  out=2355  tot=34537
+
+Response headers:
+HTTP/1.1 100 
+
+HTTP/1.1 200 
+Content-Disposition: attachment; filename="audit-report.pdf"
+X-OpenAI-Input-Tokens: 114426
+X-OpenAI-Output-Tokens: 16905
+X-OpenAI-Total-Tokens: 131331
+X-Anthropic-Input-Tokens: 32182
+X-Anthropic-Output-Tokens: 2355
+X-Anthropic-Total-Tokens: 34537
+Accept-Ranges: bytes
+Content-Type: application/pdf
+Content-Length: 331063
+Date: Wed, 25 Feb 2026 13:58:01 GMT
+
+

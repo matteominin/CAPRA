@@ -91,6 +91,7 @@ public class LatexReportService {
                     + "The document appears well-structured and coherent.";
         }
 
+
         StringBuilder featureSummary = new StringBuilder();
         if (allFeatures != null && !allFeatures.isEmpty()) {
             long present = allFeatures.stream().filter(f -> f.status() == FeatureCoverage.FeatureStatus.PRESENT).count();
@@ -98,6 +99,13 @@ public class LatexReportService {
             long absent = allFeatures.stream().filter(f -> f.status() == FeatureCoverage.FeatureStatus.ABSENT).count();
             featureSummary.append("\nFeature coverage: %d present, %d partial, %d absent (out of %d)\n"
                     .formatted(present, partial, absent, allFeatures.size()));
+        }
+
+        // Summarize extractionCompleteness for the LLM
+        StringBuilder completenessSummary = new StringBuilder();
+        if (extractionCompleteness != null && !extractionCompleteness.isEmpty()) {
+            completenessSummary.append("Extraction completeness for key sections:\n");
+            extractionCompleteness.forEach((k, v) -> completenessSummary.append("- %s: %s\n".formatted(k, v)));
         }
 
         String systemPrompt = """
@@ -150,10 +158,14 @@ public class LatexReportService {
             
             Here are some features found in the document to help you understand what the project does:
             %s
-            %s""".formatted(
+            %s
+            %s
+            IMPORTANT: Extraction completeness for key sections is shown above. If any section is PARTIAL or MISSING, do NOT invent or hallucinate details or issue numbers for that section. Only summarize what is actually present in the document and marked as COMPLETE or PARTIAL. If a section is missing, acknowledge its absence or skip it in the summary.
+            """.formatted(
                 report.documentName(),
                 featureSummary,
-                ucSummary);
+                ucSummary,
+                completenessSummary);
 
         try {
             String summary = callLlmWithFallback(systemPrompt, userPrompt);
@@ -465,15 +477,15 @@ public class LatexReportService {
             List<String> linkedUCIds = reqToUCs.getOrDefault(req.requirementId(), List.of());
 
             List<String> linkedUCLinks = linkedUCIds.stream()
-                    .map(ucId -> "\\hyperlink{uc:%s}{%s}".formatted(ucId, ucId))
+                    .map(ucId -> "\\hyperlink{%s}{%s}".formatted(ucAnchor(ucId), escapeLatex(ucId)))
                     .toList();
 
             boolean hasUC = !linkedUCLinks.isEmpty();
             String ucMarker = hasUC ? "\\ok" : "\\nok";
             String ucList = hasUC ? String.join(", ", linkedUCLinks) : "---";
 
-            sb.append("\\hypertarget{req:%s}{%s} & %s & %s & %s \\\\\n".formatted(
-                    req.requirementId(),
+            sb.append("\\hypertarget{%s}{%s} & %s & %s & %s \\\\\n".formatted(
+                    reqAnchor(req.requirementId()),
                     escapeLatex(req.requirementId()),
                     escapeLatex(req.requirementName()),
                     ucMarker, ucList));
@@ -496,7 +508,7 @@ public class LatexReportService {
                         .filter(r -> r.requirementId().equals(reqId))
                         .findFirst().orElse(null);
                 String reqName = req != null ? req.requirementName() : "";
-                sb.append("  \\item \\textbf{\\hyperlink{req:%s}{%s}".formatted(reqId, escapeLatex(reqId)));
+                sb.append("  \\item \\textbf{\\hyperlink{%s}{%s}".formatted(reqAnchor(reqId), escapeLatex(reqId)));
                 if (reqName != null && !reqName.isBlank()) {
                     sb.append(" --- %s".formatted(escapeLatex(reqName)));
                 }
@@ -589,7 +601,7 @@ public class LatexReportService {
 
                 // Render UC template as centered table with actual template fields
                 sb.append("\\begin{center}\n");
-                sb.append("\\hypertarget{uc:%s}{}\n".formatted(uc.useCaseId()));
+                sb.append("\\hypertarget{%s}{}\n".formatted(ucAnchor(uc.useCaseId())));
                 sb.append("\\begin{tabular}{l >{\\RaggedRight\\arraybackslash}p{10cm}}\n");
                 sb.append("\\toprule\n");
                 sb.append("\\multicolumn{2}{l}{\\textbf{%s}} \\\\\n".formatted(escapeLatex(heading)));
@@ -633,7 +645,7 @@ public class LatexReportService {
             for (UseCaseEntry uc : operationalWithoutTemplate) {
                 String shortDesc = buildShortUcDescription(uc);
                 String label = "%s --- %s".formatted(uc.useCaseId(), shortDesc);
-                sb.append("  \\item \\hypertarget{uc:%s}{%s}\n".formatted(uc.useCaseId(), escapeLatex(label)));
+                sb.append("  \\item \\hypertarget{%s}{%s}\n".formatted(ucAnchor(uc.useCaseId()), escapeLatex(label)));
             }
             sb.append("\\end{itemize}\n\n");
 
@@ -656,7 +668,7 @@ public class LatexReportService {
                 String label = uc.useCaseName() != null && !uc.useCaseName().isBlank()
                         ? "%s --- %s".formatted(uc.useCaseId(), uc.useCaseName())
                         : uc.useCaseId();
-                sb.append("  \\item \\hypertarget{uc:%s}{%s}\n".formatted(uc.useCaseId(), escapeLatex(label)));
+                sb.append("  \\item \\hypertarget{%s}{%s}\n".formatted(ucAnchor(uc.useCaseId()), escapeLatex(label)));
             }
             sb.append("\\end{itemize}\n\n");
         }
@@ -720,8 +732,8 @@ public class LatexReportService {
             sb.append("\\begin{description}[style=nextline, leftmargin=1em]\n");
             for (AuditIssue issue : testIssues) {
                 String sevBadge = severityBadge(issue.severity());
-                sb.append("  \\item[%s --- %s --- \\hypertarget{tst:%s}{}%s]\n".formatted(
-                        sevBadge, escapeLatex(issue.id()), issue.id(),
+                sb.append("  \\item[%s --- %s --- \\hypertarget{%s}{}%s]\n".formatted(
+                        sevBadge, escapeLatex(issue.id()), testAnchor(issue.id()),
                         issue.shortDescription() != null ? " " + escapeLatex(issue.shortDescription()) : ""));
 
                 sb.append("  \\textbf{Problem:} %s\n".formatted(
@@ -815,7 +827,7 @@ public class LatexReportService {
             for (TraceabilityEntry e : reqEntries) {
                 String ucKey = normalizeUcId(e.useCaseId());
                 String source = extractedRequirementIds.contains(reqId) ? "\\textsc{explicit}" : "\\textsc{inferred}";
-                String reqCol = first ? "\\hyperlink{req:%s}{%s}".formatted(reqId, escapeLatex(reqId)) : "";
+                String reqCol = first ? "\\hyperlink{%s}{%s}".formatted(reqAnchor(reqId), escapeLatex(reqId)) : "";
                 String sourceCol = first ? source : "";
                 first = false;
 
@@ -824,10 +836,10 @@ public class LatexReportService {
                     if (!renderedUcKeys.add(ucKey)) {
                         continue;
                     }
-                    sb.append("%s & %s & \\hyperlink{uc:%s}{%s} & %s & %s \\\\\n".formatted(
+                    sb.append("%s & %s & \\hyperlink{%s}{%s} & %s & %s \\\\\n".formatted(
                             reqCol,
                             sourceCol,
-                            e.useCaseId(), e.useCaseId(),
+                            ucAnchor(e.useCaseId()), escapeLatex(e.useCaseId()),
                             e.hasDesign() ? "\\ok" : "\\nok",
                             e.hasTest() ? "\\ok" : "\\nok"));
                 } else {
@@ -851,8 +863,8 @@ public class LatexReportService {
                     if (!renderedUcKeys.add(ucKey)) {
                         continue;
                     }
-                    sb.append("--- & --- & \\hyperlink{uc:%s}{%s} & %s & %s \\\\\n".formatted(
-                            e.useCaseId(), e.useCaseId(),
+                    sb.append("--- & --- & \\hyperlink{%s}{%s} & %s & %s \\\\\n".formatted(
+                            ucAnchor(e.useCaseId()), escapeLatex(e.useCaseId()),
                             e.hasDesign() ? "\\ok" : "\\nok",
                             e.hasTest() ? "\\ok" : "\\nok"));
                 }
@@ -864,8 +876,8 @@ public class LatexReportService {
                 if (!renderedUcKeys.add(ucKey)) {
                     continue;
                 }
-                sb.append("--- & --- & \\hyperlink{uc:%s}{%s} & ? & ? \\\\\n".formatted(
-                        uc.useCaseId(), escapeLatex(uc.useCaseId())));
+                sb.append("--- & --- & \\hyperlink{%s}{%s} & ? & ? \\\\\n".formatted(
+                        ucAnchor(uc.useCaseId()), escapeLatex(uc.useCaseId())));
             }
         }
 
@@ -1061,6 +1073,31 @@ public class LatexReportService {
                 .replaceAll("\\s+", " ")
                 .trim();
         return normalized;
+    }
+
+    /**
+     * Hyperref anchors must avoid reserved characters like '#'.
+     * Build deterministic safe anchor IDs from source identifiers.
+     */
+    private String reqAnchor(String reqId) {
+        return "req:" + sanitizeAnchor(reqId);
+    }
+
+    private String ucAnchor(String ucId) {
+        return "uc:" + sanitizeAnchor(ucId);
+    }
+
+    private String testAnchor(String testId) {
+        return "tst:" + sanitizeAnchor(testId);
+    }
+
+    private String sanitizeAnchor(String raw) {
+        if (raw == null || raw.isBlank()) return "unknown";
+        String s = raw.trim().replaceAll("\\s+", "-");
+        s = s.replaceAll("[^A-Za-z0-9._:-]", "-");
+        s = s.replaceAll("-{2,}", "-");
+        s = s.replaceAll("^-+|-+$", "");
+        return s.isBlank() ? "unknown" : s;
     }
 
     /**

@@ -1,0 +1,14 @@
+======================================================
+  Token & timing usage — 25-06-12_BrunoMonetti
+  Run date : Wed Feb 25 14:54:54 CET 2026
+======================================================
+
+--- Relazione_ServerTransfer.pdf ---
+openai_input_tokens: 114426
+openai_output_tokens: 16905
+openai_total_tokens: 131331
+anthropic_input_tokens: 32182
+anthropic_output_tokens: 2355
+anthropic_total_tokens: 34537
+execution_time_seconds: 186.200650
+

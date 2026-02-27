@@ -1,0 +1,14 @@
+======================================================
+  Token & timing usage — 25-05-09_BlushiFrancesko_conJpa30-
+  Run date : Wed Feb 25 14:29:09 CET 2026
+======================================================
+
+--- Ingegneria_Software Francesko Blushi.pdf ---
+openai_input_tokens: 217970
+openai_output_tokens: 25438
+openai_total_tokens: 243408
+anthropic_input_tokens: 39487
+anthropic_output_tokens: 2794
+anthropic_total_tokens: 42281
+execution_time_seconds: 265.787321
+

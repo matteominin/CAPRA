@@ -46,7 +46,7 @@ public class MultiAgentOrchestrator {
             .thenComparing(i -> i.description() != null ? i.description() : "");
 
     private final DocumentIngestionService ingestionService;
-    private final RequirementsAgent requirementsAgent;
+    private final RequirementsAndUseCaseAgent requirementsAndUseCaseAgent;
     private final TestAuditorAgent testAuditorAgent;
     private final ArchitectureAgent architectureAgent;
     private final FeatureCheckAgent featureCheckAgent;
@@ -61,7 +61,7 @@ public class MultiAgentOrchestrator {
     private final ExecutorService agentExecutor;
 
     public MultiAgentOrchestrator(DocumentIngestionService ingestionService,
-                                  RequirementsAgent requirementsAgent,
+                                  RequirementsAndUseCaseAgent requirementsAndUseCaseAgent,
                                   TestAuditorAgent testAuditorAgent,
                                   ArchitectureAgent architectureAgent,
                                   FeatureCheckAgent featureCheckAgent,
@@ -75,7 +75,7 @@ public class MultiAgentOrchestrator {
                                   LatexCompilerService latexCompilerService,
                                   ExecutorService agentExecutor) {
         this.ingestionService = ingestionService;
-        this.requirementsAgent = requirementsAgent;
+        this.requirementsAndUseCaseAgent = requirementsAndUseCaseAgent;
         this.testAuditorAgent = testAuditorAgent;
         this.architectureAgent = architectureAgent;
         this.featureCheckAgent = featureCheckAgent;
@@ -96,16 +96,19 @@ public class MultiAgentOrchestrator {
         log.info("Starting audit pipeline for '{}'", filename);
         log.info("═══════════════════════════════════════════════");
 
+        long t0 = System.nanoTime();
+
         // ── Step 1: Text extraction ──
         log.info("[1/9] Extracting text from PDF...");
         String fullText = ingestionService.extractFullText(file);
+        long t1 = System.nanoTime();
         log.info("[1/9] Extraction completed: {} characters", fullText.length());
 
         // ── Step 2: Parallel analysis — ALL agents + extractors run together ──
         log.info("[2/9] Starting parallel analysis (6 agents + 2 extractors)...");
 
         CompletableFuture<AgentResponse> reqFuture =
-                CompletableFuture.supplyAsync(() -> requirementsAgent.analyze(fullText), agentExecutor);
+                CompletableFuture.supplyAsync(() -> requirementsAndUseCaseAgent.analyze(fullText), agentExecutor);
         CompletableFuture<AgentResponse> testFuture =
                 CompletableFuture.supplyAsync(() -> testAuditorAgent.analyze(fullText), agentExecutor);
         CompletableFuture<AgentResponse> archFuture =
@@ -135,6 +138,7 @@ public class MultiAgentOrchestrator {
         List<TraceabilityEntry> traceability = traceabilityAgent.buildMatrix(
                 fullText, extractedUCs, extractedReqs);
         log.info("[3/9] Traceability completed: {} entries", traceability.size());
+        long t2 = System.nanoTime();
 
         // ── Step 4: Evidence Anchoring (fuzzy match, NO LLM) ──
         log.info("[4/9] Evidence Anchoring (quote verification via fuzzy match)...");
@@ -171,6 +175,7 @@ public class MultiAgentOrchestrator {
                 normalizedIssues, featureCoverage);
         log.info("[7/9] Normalization completed: {} issues, {} missing features, {} completeness metrics",
                 normalizedIssues.size(), missingFeatures.size(), extractionCompleteness.size());
+        long t3 = System.nanoTime();
 
         // ── Step 8: Report generation ──
         log.info("[8/9] Generating LaTeX report...");
@@ -189,6 +194,17 @@ public class MultiAgentOrchestrator {
         } catch (Exception e) {
             log.warn("[9/9] PDF compilation failed (.tex file is still available): {}", e.getMessage());
         }
+        long t4 = System.nanoTime();
+
+        double docExtSec = (t1 - t0) / 1_000_000_000.0;
+        double parallelSec = (t2 - t1) / 1_000_000_000.0;
+        double evidenceSec = (t3 - t2) / 1_000_000_000.0;
+        double reportSec = (t4 - t3) / 1_000_000_000.0;
+        PipelineTimings timings = new PipelineTimings(docExtSec, parallelSec, evidenceSec, reportSec);
+        log.info("Pipeline timings (s): extraction={}, parallel={}, evidence_dedup={}, report={}, total={}",
+                String.format("%.2f", docExtSec), String.format("%.2f", parallelSec),
+                String.format("%.2f", evidenceSec), String.format("%.2f", reportSec),
+                String.format("%.2f", timings.totalSeconds()));
 
         log.info("═══════════════════════════════════════════════");
         log.info("Pipeline completed: {} issues, {} features ({} missing), {} traceability, {} UCs, {} Reqs",
@@ -196,6 +212,6 @@ public class MultiAgentOrchestrator {
                 traceability.size(), extractedUCs.size(), extractedReqs.size());
         log.info("═══════════════════════════════════════════════");
 
-        return new AuditResult(report, texFile, pdfFile);
+        return new AuditResult(report, texFile, pdfFile, timings);
     }
 }

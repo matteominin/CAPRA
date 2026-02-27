@@ -1,0 +1,29 @@
+======================================================
+  Analysis log — 25-04-23_FloreaAndrei_Modo1
+  Run date : Wed Feb 25 14:22:24 CET 2026
+======================================================
+
+------------------------------------------------------
+File             : relazione_florea_corretta.pdf
+Timestamp        : Wed Feb 25 14:25:25 CET 2026
+HTTP status      : 200
+Content-Type     : application/pdf
+Execution time   : 181.019637s
+OpenAI tokens    : in=84354  out=18673  tot=103027
+Anthropic tokens : in=27557  out=2134  tot=29691
+
+Response headers:
+HTTP/1.1 200 
+Content-Disposition: attachment; filename="audit-report.pdf"
+X-OpenAI-Input-Tokens: 84354
+X-OpenAI-Output-Tokens: 18673
+X-OpenAI-Total-Tokens: 103027
+X-Anthropic-Input-Tokens: 27557
+X-Anthropic-Output-Tokens: 2134
+X-Anthropic-Total-Tokens: 29691
+Accept-Ranges: bytes
+Content-Type: application/pdf
+Content-Length: 329205
+Date: Wed, 25 Feb 2026 13:25:25 GMT
+
+

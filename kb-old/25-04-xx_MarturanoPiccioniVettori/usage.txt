@@ -1,0 +1,14 @@
+======================================================
+  Token & timing usage — 25-04-xx_MarturanoPiccioniVettori
+  Run date : Wed Feb 25 14:25:25 CET 2026
+======================================================
+
+--- Relazione.pdf ---
+openai_input_tokens: 132488
+openai_output_tokens: 22444
+openai_total_tokens: 154932
+anthropic_input_tokens: 31932
+anthropic_output_tokens: 2618
+anthropic_total_tokens: 34550
+execution_time_seconds: 224.720554
+

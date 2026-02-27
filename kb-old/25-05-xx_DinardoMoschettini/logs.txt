@@ -1,0 +1,32 @@
+======================================================
+  Analysis log — 25-05-xx_DinardoMoschettini
+  Run date : Wed Feb 25 14:42:40 CET 2026
+======================================================
+
+------------------------------------------------------
+File             : imagemanager.pdf
+Timestamp        : Wed Feb 25 14:48:57 CET 2026
+HTTP status      : 200
+Content-Type     : text/plain
+Execution time   : 377.373904s
+OpenAI tokens    : in=233557  out=24948  tot=258505
+Anthropic tokens : in=51484  out=2738  tot=54222
+
+Response headers:
+HTTP/1.1 100 
+
+HTTP/1.1 200 
+Content-Disposition: attachment; filename="audit-report.tex"
+X-Warning: PDF compilation failed, returning LaTeX source file
+X-OpenAI-Input-Tokens: 233557
+X-OpenAI-Output-Tokens: 24948
+X-OpenAI-Total-Tokens: 258505
+X-Anthropic-Input-Tokens: 51484
+X-Anthropic-Output-Tokens: 2738
+X-Anthropic-Total-Tokens: 54222
+Accept-Ranges: bytes
+Content-Type: text/plain
+Content-Length: 51096
+Date: Wed, 25 Feb 2026 13:48:57 GMT
+
+

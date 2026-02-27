@@ -1,0 +1,31 @@
+======================================================
+  Analysis log — 25-05-xx_FerrittiLinSansavini
+  Run date : Wed Feb 25 14:48:57 CET 2026
+======================================================
+
+------------------------------------------------------
+File             : SANSAVINI-FERRITTI-LIN (FINAL).pdf
+Timestamp        : Wed Feb 25 14:54:54 CET 2026
+HTTP status      : 200
+Content-Type     : application/pdf
+Execution time   : 357.050986s
+OpenAI tokens    : in=184670  out=21512  tot=206182
+Anthropic tokens : in=47872  out=2323  tot=50195
+
+Response headers:
+HTTP/1.1 100 
+
+HTTP/1.1 200 
+Content-Disposition: attachment; filename="audit-report.pdf"
+X-OpenAI-Input-Tokens: 184670
+X-OpenAI-Output-Tokens: 21512
+X-OpenAI-Total-Tokens: 206182
+X-Anthropic-Input-Tokens: 47872
+X-Anthropic-Output-Tokens: 2323
+X-Anthropic-Total-Tokens: 50195
+Accept-Ranges: bytes
+Content-Type: application/pdf
+Content-Length: 299605
+Date: Wed, 25 Feb 2026 13:54:54 GMT
+
+

@@ -42,6 +42,7 @@ for subdir in "$KB_DIR"/*/; do
       ! -name "logs.txt"   \
       ! -name "usage.txt"  \
       ! -name "response_*" \
+      ! -name "fuzzy_discarded_*.json" \
       -print0 | sort -z
   )
 
@@ -113,6 +114,16 @@ for subdir in "$KB_DIR"/*/; do
     ANT_IN=$(extract_header  "x-anthropic-input-tokens");  [[ -z "$ANT_IN"  ]] && ANT_IN="N/A"
     ANT_OUT=$(extract_header "x-anthropic-output-tokens"); [[ -z "$ANT_OUT" ]] && ANT_OUT="N/A"
     ANT_TOT=$(extract_header "x-anthropic-total-tokens");  [[ -z "$ANT_TOT" ]] && ANT_TOT="N/A"
+    FUZZY_DISCARDED_COUNT=$(extract_header "x-fuzzy-discarded-count"); [[ -z "$FUZZY_DISCARDED_COUNT" ]] && FUZZY_DISCARDED_COUNT="0"
+    FUZZY_DISCARDED_ISSUES=$(extract_header "x-fuzzy-discarded-issues"); [[ -z "$FUZZY_DISCARDED_ISSUES" ]] && FUZZY_DISCARDED_ISSUES="none"
+    FUZZY_DISCARDED_JSON_B64=$(extract_header "x-fuzzy-discarded-json-b64")
+
+    # Pipeline stage timings (for paper / evaluation)
+    STAGE_EXTRACTION=$(extract_header "x-pipeline-stage-extraction-seconds");   [[ -z "$STAGE_EXTRACTION" ]] && STAGE_EXTRACTION="N/A"
+    STAGE_PARALLEL=$(extract_header "x-pipeline-stage-parallelagents-seconds");  [[ -z "$STAGE_PARALLEL" ]] && STAGE_PARALLEL="N/A"
+    STAGE_EVIDENCE=$(extract_header "x-pipeline-stage-evidencededup-seconds");   [[ -z "$STAGE_EVIDENCE" ]] && STAGE_EVIDENCE="N/A"
+    STAGE_REPORT=$(extract_header "x-pipeline-stage-reportgen-seconds");       [[ -z "$STAGE_REPORT" ]] && STAGE_REPORT="N/A"
+    PIPELINE_TOTAL=$(extract_header "x-pipeline-total-seconds");                [[ -z "$PIPELINE_TOTAL" ]] && PIPELINE_TOTAL="N/A"
 
     # ── Detect content type (for log readability) ─────────────────────────────
     CONTENT_TYPE="$(grep -i '^content-type:' "$headers_tmp" 2>/dev/null \
@@ -122,6 +133,29 @@ for subdir in "$KB_DIR"/*/; do
     error_body=""
     if [[ "$CONTENT_TYPE" == *"application/json"* ]] && [[ -f "$output_file" ]]; then
       error_body="$(cat "$output_file" 2>/dev/null)"
+    fi
+
+    fuzzy_sidecar=""
+    if [[ -n "$FUZZY_DISCARDED_JSON_B64" ]]; then
+      fuzzy_sidecar="$subdir/fuzzy_discarded_${filename%.*}.json"
+      python3 - "$FUZZY_DISCARDED_JSON_B64" "$fuzzy_sidecar" <<'PY'
+import base64
+import json
+import pathlib
+import sys
+
+encoded = sys.argv[1].strip()
+target = pathlib.Path(sys.argv[2])
+
+if not encoded:
+    sys.exit(0)
+
+padding = '=' * ((4 - len(encoded) % 4) % 4)
+raw = base64.urlsafe_b64decode(encoded + padding)
+obj = json.loads(raw.decode("utf-8"))
+
+target.write_text(json.dumps(obj, ensure_ascii=False, indent=2), encoding="utf-8")
+PY
     fi
 
     # ── Append to logs.txt ────────────────────────────────────────────────────
@@ -134,6 +168,14 @@ for subdir in "$KB_DIR"/*/; do
       echo "Execution time   : ${EXEC_TIME}s"
       echo "OpenAI tokens    : in=$OAI_IN  out=$OAI_OUT  tot=$OAI_TOT"
       echo "Anthropic tokens : in=$ANT_IN  out=$ANT_OUT  tot=$ANT_TOT"
+      echo "Fuzzy discarded  : count=$FUZZY_DISCARDED_COUNT"
+      if [[ "$FUZZY_DISCARDED_ISSUES" != "none" ]]; then
+        echo "Fuzzy discarded issues:"
+        echo "$FUZZY_DISCARDED_ISSUES"
+      fi
+      if [[ -n "$fuzzy_sidecar" ]]; then
+        echo "Fuzzy sidecar    : $(basename "$fuzzy_sidecar")"
+      fi
       echo ""
       echo "Response headers:"
       cat "$headers_tmp"
@@ -154,7 +196,14 @@ for subdir in "$KB_DIR"/*/; do
       echo "anthropic_input_tokens: $ANT_IN"
       echo "anthropic_output_tokens: $ANT_OUT"
       echo "anthropic_total_tokens: $ANT_TOT"
+      echo "fuzzy_discarded_count: $FUZZY_DISCARDED_COUNT"
+      echo "fuzzy_discarded_sidecar: ${fuzzy_sidecar:+$(basename "$fuzzy_sidecar")}"
       echo "execution_time_seconds: $EXEC_TIME"
+      echo "pipeline_stage_extraction_seconds: $STAGE_EXTRACTION"
+      echo "pipeline_stage_parallel_agents_seconds: $STAGE_PARALLEL"
+      echo "pipeline_stage_evidence_dedup_seconds: $STAGE_EVIDENCE"
+      echo "pipeline_stage_report_gen_seconds: $STAGE_REPORT"
+      echo "pipeline_total_seconds: $PIPELINE_TOTAL"
       echo ""
     } >> "$USAGE_FILE"
 
@@ -162,7 +211,7 @@ for subdir in "$KB_DIR"/*/; do
 
     # ── Console summary ───────────────────────────────────────────────────────
     if [[ "$HTTP_CODE" == "200" ]]; then
-      echo "     OK  | OAI: ${OAI_IN}in/${OAI_OUT}out | ANT: ${ANT_IN}in/${ANT_OUT}out | Time: ${EXEC_TIME}s"
+      echo "     OK  | OAI: ${OAI_IN}in/${OAI_OUT}out | ANT: ${ANT_IN}in/${ANT_OUT}out | fuzzy_discarded=${FUZZY_DISCARDED_COUNT} | Time: ${EXEC_TIME}s"
     else
       echo "     FAIL (HTTP $HTTP_CODE) | Time: ${EXEC_TIME}s"
       if [[ -n "$error_body" ]]; then

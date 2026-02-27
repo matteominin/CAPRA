@@ -1,0 +1,14 @@
+======================================================
+  Token & timing usage — 25-02-05_CaselliCavicchiaTinacci_TrentaLode_Tickets
+  Run date : Wed Feb 25 14:13:25 CET 2026
+======================================================
+
+--- Domain Driven Design of a Digital Ticketing Validation System to Prevent Scalping.pdf ---
+openai_input_tokens: 131515
+openai_output_tokens: 17229
+openai_total_tokens: 148744
+anthropic_input_tokens: 35387
+anthropic_output_tokens: 2448
+anthropic_total_tokens: 37835
+execution_time_seconds: 199.861278
+

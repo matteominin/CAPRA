@@ -18,7 +18,7 @@ import java.util.stream.Collectors;
 
 /**
  * Meta-agent for verification (Verification Loop).
- * Receives outputs from RequirementsAgent and TestAuditorAgent and verifies each issue
+ * Receives outputs from RequirementsAndUseCaseAgent and TestAuditorAgent and verifies each issue
  * by searching for evidence in the original document text.
  * <p>
  * Implements:

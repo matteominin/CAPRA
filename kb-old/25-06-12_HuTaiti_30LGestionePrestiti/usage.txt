@@ -1,0 +1,14 @@
+======================================================
+  Token & timing usage — 25-06-12_HuTaiti_30LGestionePrestiti
+  Run date : Wed Feb 25 15:03:17 CET 2026
+======================================================
+
+--- RelazioneSWE_Hu_Taiti.pdf ---
+openai_input_tokens: 197273
+openai_output_tokens: 19397
+openai_total_tokens: 216670
+anthropic_input_tokens: 50848
+anthropic_output_tokens: 2495
+anthropic_total_tokens: 53343
+execution_time_seconds: 252.159914
+

@@ -1,0 +1,31 @@
+======================================================
+  Analysis log — 25-04-04_FediDelaurentiis
+  Run date : Wed Feb 25 14:19:08 CET 2026
+======================================================
+
+------------------------------------------------------
+File             : Elaborato SWE.pdf
+Timestamp        : Wed Feb 25 14:22:24 CET 2026
+HTTP status      : 200
+Content-Type     : application/pdf
+Execution time   : 195.853918s
+OpenAI tokens    : in=120860  out=18398  tot=139258
+Anthropic tokens : in=33175  out=2356  tot=35531
+
+Response headers:
+HTTP/1.1 100 
+
+HTTP/1.1 200 
+Content-Disposition: attachment; filename="audit-report.pdf"
+X-OpenAI-Input-Tokens: 120860
+X-OpenAI-Output-Tokens: 18398
+X-OpenAI-Total-Tokens: 139258
+X-Anthropic-Input-Tokens: 33175
+X-Anthropic-Output-Tokens: 2356
+X-Anthropic-Total-Tokens: 35531
+Accept-Ranges: bytes
+Content-Type: application/pdf
+Content-Length: 329775
+Date: Wed, 25 Feb 2026 13:22:24 GMT
+
+

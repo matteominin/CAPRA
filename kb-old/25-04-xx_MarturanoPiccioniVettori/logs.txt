@@ -1,0 +1,31 @@
+======================================================
+  Analysis log — 25-04-xx_MarturanoPiccioniVettori
+  Run date : Wed Feb 25 14:25:25 CET 2026
+======================================================
+
+------------------------------------------------------
+File             : Relazione.pdf
+Timestamp        : Wed Feb 25 14:29:09 CET 2026
+HTTP status      : 200
+Content-Type     : application/pdf
+Execution time   : 224.720554s
+OpenAI tokens    : in=132488  out=22444  tot=154932
+Anthropic tokens : in=31932  out=2618  tot=34550
+
+Response headers:
+HTTP/1.1 100 
+
+HTTP/1.1 200 
+Content-Disposition: attachment; filename="audit-report.pdf"
+X-OpenAI-Input-Tokens: 132488
+X-OpenAI-Output-Tokens: 22444
+X-OpenAI-Total-Tokens: 154932
+X-Anthropic-Input-Tokens: 31932
+X-Anthropic-Output-Tokens: 2618
+X-Anthropic-Total-Tokens: 34550
+Accept-Ranges: bytes
+Content-Type: application/pdf
+Content-Length: 335807
+Date: Wed, 25 Feb 2026 13:29:09 GMT
+
+

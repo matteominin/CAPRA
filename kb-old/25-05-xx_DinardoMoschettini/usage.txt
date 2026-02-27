@@ -1,0 +1,14 @@
+======================================================
+  Token & timing usage — 25-05-xx_DinardoMoschettini
+  Run date : Wed Feb 25 14:42:40 CET 2026
+======================================================
+
+--- imagemanager.pdf ---
+openai_input_tokens: 233557
+openai_output_tokens: 24948
+openai_total_tokens: 258505
+anthropic_input_tokens: 51484
+anthropic_output_tokens: 2738
+anthropic_total_tokens: 54222
+execution_time_seconds: 377.373904
+

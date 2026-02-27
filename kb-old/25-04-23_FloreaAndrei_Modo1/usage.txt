@@ -1,0 +1,14 @@
+======================================================
+  Token & timing usage — 25-04-23_FloreaAndrei_Modo1
+  Run date : Wed Feb 25 14:22:24 CET 2026
+======================================================
+
+--- relazione_florea_corretta.pdf ---
+openai_input_tokens: 84354
+openai_output_tokens: 18673
+openai_total_tokens: 103027
+anthropic_input_tokens: 27557
+anthropic_output_tokens: 2134
+anthropic_total_tokens: 29691
+execution_time_seconds: 181.019637
+

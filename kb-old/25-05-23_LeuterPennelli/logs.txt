@@ -1,0 +1,31 @@
+======================================================
+  Analysis log — 25-05-23_LeuterPennelli
+  Run date : Wed Feb 25 14:33:35 CET 2026
+======================================================
+
+------------------------------------------------------
+File             : ApartamentSWE.pdf
+Timestamp        : Wed Feb 25 14:37:35 CET 2026
+HTTP status      : 200
+Content-Type     : application/pdf
+Execution time   : 239.679511s
+OpenAI tokens    : in=150203  out=21551  tot=171754
+Anthropic tokens : in=32977  out=2491  tot=35468
+
+Response headers:
+HTTP/1.1 100 
+
+HTTP/1.1 200 
+Content-Disposition: attachment; filename="audit-report.pdf"
+X-OpenAI-Input-Tokens: 150203
+X-OpenAI-Output-Tokens: 21551
+X-OpenAI-Total-Tokens: 171754
+X-Anthropic-Input-Tokens: 32977
+X-Anthropic-Output-Tokens: 2491
+X-Anthropic-Total-Tokens: 35468
+Accept-Ranges: bytes
+Content-Type: application/pdf
+Content-Length: 328653
+Date: Wed, 25 Feb 2026 13:37:35 GMT
+
+

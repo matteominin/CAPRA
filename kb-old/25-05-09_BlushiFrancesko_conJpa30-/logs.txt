@@ -1,0 +1,29 @@
+======================================================
+  Analysis log — 25-05-09_BlushiFrancesko_conJpa30-
+  Run date : Wed Feb 25 14:29:09 CET 2026
+======================================================
+
+------------------------------------------------------
+File             : Ingegneria_Software Francesko Blushi.pdf
+Timestamp        : Wed Feb 25 14:33:35 CET 2026
+HTTP status      : 200
+Content-Type     : application/pdf
+Execution time   : 265.787321s
+OpenAI tokens    : in=217970  out=25438  tot=243408
+Anthropic tokens : in=39487  out=2794  tot=42281
+
+Response headers:
+HTTP/1.1 200 
+Content-Disposition: attachment; filename="audit-report.pdf"
+X-OpenAI-Input-Tokens: 217970
+X-OpenAI-Output-Tokens: 25438
+X-OpenAI-Total-Tokens: 243408
+X-Anthropic-Input-Tokens: 39487
+X-Anthropic-Output-Tokens: 2794
+X-Anthropic-Total-Tokens: 42281
+Accept-Ranges: bytes
+Content-Type: application/pdf
+Content-Length: 328426
+Date: Wed, 25 Feb 2026 13:33:35 GMT
+
+

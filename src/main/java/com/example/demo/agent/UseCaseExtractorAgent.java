@@ -22,52 +22,51 @@ public class UseCaseExtractorAgent {
     private static final Logger log = LoggerFactory.getLogger(UseCaseExtractorAgent.class);
 
     private static final String SYSTEM_PROMPT = """
-            You are a Software Engineering document analyst.
+        You are a Software Engineering document analyst.
 
-            TASK:
-            Extract ALL use cases from the document. You must find EVERY use case
-            mentioned anywhere: in use case diagrams, in structured templates,
-            in text descriptions, in tables, in appendices.
+        TASK:
+        Extract ALL use cases from the document. You must find EVERY use case
+        mentioned anywhere: in use case diagrams, in structured templates,
+        in text descriptions, in tables, in appendices.
 
-            IMPORTANT — EXHAUSTIVE EXTRACTION:
-            - Look at ALL use case diagrams carefully. Each oval/ellipse in a diagram is a UC.
-            - Look for numbered use cases: UC-0, UC-1, UC-2, UC-0.1, UC-2.3, etc.
-            - Look for sub-use cases (e.g., UC-2.1, UC-2.2 are sub-UCs of UC-2)
-            - Look for <<include>> and <<extend>> relationships — both sides are UCs
-            - Look for structured UC templates (tables or forms with Actor, Preconditions,
-              Main Flow, Postconditions, Alternative Flows)
-            - Look for UCs mentioned only in text (e.g., "Use Case 5: Manage Loans")
-            - Include ALL UCs regardless of detail level
+        IMPORTANT — EXHAUSTIVE EXTRACTION:
+        - Look at ALL use case diagrams carefully. Each oval/ellipse in a diagram is a UC.
+        - Look for numbered use cases: UC-0, UC-1, UC-2, UC-0.1, UC-2.3, etc.
+        - Look for sub-use cases (e.g., UC-2.1, UC-2.2 are sub-UCs of UC-2)
+        - Look for <<include>> and <<extend>> relationships — both sides are UCs
+        - Look for structured UC templates (tables or forms with Actor, Preconditions,
+          Main Flow, Postconditions, Alternative Flows)
+        - Look for UCs mentioned only in text (e.g., "Use Case 5: Manage Loans")
+        - Include ALL UCs regardless of detail level
 
-            FOR EACH USE CASE, provide:
-            - useCaseId: EXACTLY as written in the document (e.g., "UC-1", "UC-0.1", "UC 5")
-            - useCaseName: the name/title (e.g., "Registrazione", "Gestione Prestiti")
-            - hasTemplate: true ONLY if the document contains a STRUCTURED TEMPLATE
-              (with fields like Actor, Preconditions, Main Flow, Postconditions).
-              A simple text mention does NOT count as a template.
-            - actor: the primary actor from the template. null if no template.
-            - preconditions: from the template. null if no template.
-            - mainFlow: the main flow steps from the template. null if no template.
-            - postconditions: from the template. null if no template.
-            - alternativeFlows: alternative/exception flows from the template. null if none.
+        FOR EACH USE CASE, provide:
+        - useCaseId: EXACTLY as written in the document (e.g., "UC-1", "UC-0.1", "UC 5")
+        - useCaseName: the name/title (e.g., "Registrazione", "Gestione Prestiti")
+        - hasTemplate: true ONLY if the document contains a STRUCTURED TEMPLATE
+          (with fields like Actor, Preconditions, Main Flow, Postconditions).
+          A simple text mention does NOT count as a template.
+        - actor: the primary actor from the template. null if no template.
+        - preconditions: from the template. null if no template.
+        - mainFlow: the main flow steps from the template. null if no template.
+        - postconditions: from the template. null if no template.
+        - alternativeFlows: alternative/exception flows from the template. null if none.
 
-            DEDUPLICATION RULES:
-            - Do NOT create duplicate entries for the same use case
-            - If a UC appears both in a diagram (as an oval) AND in a structured template,
-              create ONLY ONE entry — the one with hasTemplate=true
-            - If a diagram oval label (e.g., "registrazione") matches a numbered UC
-              (e.g., UC-1 "Registrazione"), keep ONLY the numbered version (UC-1)
-            - Do NOT list diagram labels as separate UCs if they are the same as numbered UCs
+        DEDUPLICATION RULES (STRICT):
+        - Each use case must appear EXACTLY ONCE in the output.
+        - If a use case appears both in a diagram (as an oval), in text, and as a structured template, ONLY INCLUDE the template version (hasTemplate=true). Discard all other duplicates.
+        - If a diagram oval label (e.g., "registrazione") matches a numbered UC (e.g., UC-1 "Registrazione"), keep ONLY the numbered version (UC-1).
+        - Do NOT list diagram labels or text mentions as separate UCs if they are the same as a numbered or templated UC.
+        - If a use case appears in multiple forms, always prioritize the most detailed (template) version.
 
-            RULES:
-            - Extract ALL UCs — do not skip any
-            - Do NOT invent UCs that are not in the document
-            - Preserve the EXACT ID format from the document
-            - Preserve the EXACT name as written (do not translate)
-            - If a UC appears in a diagram but has no template, include it with hasTemplate=false
-            - Write field values in the SAME LANGUAGE as the document (usually Italian)
-            - Each use case should appear EXACTLY ONCE in the output
-            """;
+        RULES:
+        - Extract ALL UCs — do not skip any
+        - Do NOT invent UCs that are not in the document
+        - Preserve the EXACT ID format from the document
+        - Preserve the EXACT name as written (do not translate)
+        - If a UC appears in a diagram but has no template, include it with hasTemplate=false
+        - Write field values in the SAME LANGUAGE as the document (usually Italian)
+        - Each use case should appear EXACTLY ONCE in the output, with preference for the template version if available
+        """;
 
     private final ChatClient chatClient;
 

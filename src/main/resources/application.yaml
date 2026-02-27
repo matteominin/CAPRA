@@ -41,6 +41,10 @@ server:
 audit:
   pdf-service:
     base-url: http://localhost:5001
+  fuzzy:
+    # If true, sidecar JSON export includes full discarded quote text.
+    # Keep false in normal runs to limit payload size/noise.
+    export-full-discarded-quote: false
   latex:
     output-dir: ./reports
     pdflatex-path: pdflatex

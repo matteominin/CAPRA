@@ -1,0 +1,14 @@
+======================================================
+  Token & timing usage — 25-05-23_LeuterPennelli
+  Run date : Wed Feb 25 14:33:35 CET 2026
+======================================================
+
+--- ApartamentSWE.pdf ---
+openai_input_tokens: 150203
+openai_output_tokens: 21551
+openai_total_tokens: 171754
+anthropic_input_tokens: 32977
+anthropic_output_tokens: 2491
+anthropic_total_tokens: 35468
+execution_time_seconds: 239.679511
+

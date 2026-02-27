@@ -1,0 +1,31 @@
+======================================================
+  Analysis log — 25-06-12_HuTaiti_30LGestionePrestiti
+  Run date : Wed Feb 25 15:03:17 CET 2026
+======================================================
+
+------------------------------------------------------
+File             : RelazioneSWE_Hu_Taiti.pdf
+Timestamp        : Wed Feb 25 15:07:29 CET 2026
+HTTP status      : 200
+Content-Type     : application/pdf
+Execution time   : 252.159914s
+OpenAI tokens    : in=197273  out=19397  tot=216670
+Anthropic tokens : in=50848  out=2495  tot=53343
+
+Response headers:
+HTTP/1.1 100 
+
+HTTP/1.1 200 
+Content-Disposition: attachment; filename="audit-report.pdf"
+X-OpenAI-Input-Tokens: 197273
+X-OpenAI-Output-Tokens: 19397
+X-OpenAI-Total-Tokens: 216670
+X-Anthropic-Input-Tokens: 50848
+X-Anthropic-Output-Tokens: 2495
+X-Anthropic-Total-Tokens: 53343
+Accept-Ranges: bytes
+Content-Type: application/pdf
+Content-Length: 327145
+Date: Wed, 25 Feb 2026 14:07:29 GMT
+
+

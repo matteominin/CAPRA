@@ -3,6 +3,7 @@ package com.example.demo.service;
 import com.example.demo.model.AuditIssue;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
@@ -31,6 +32,13 @@ public class EvidenceAnchoringService {
 
     /** Threshold above which confidence gets boosted. */
     private static final double BOOST_THRESHOLD = 0.70;
+    private final boolean exportFullDiscardedQuote;
+
+    public EvidenceAnchoringService(
+            @Value("${audit.fuzzy.export-full-discarded-quote:false}") boolean exportFullDiscardedQuote
+    ) {
+        this.exportFullDiscardedQuote = exportFullDiscardedQuote;
+    }
 
     /**
      * Filters issues by verifying that quotes exist in the document.
@@ -49,15 +57,21 @@ public class EvidenceAnchoringService {
 
         for (AuditIssue issue : issues) {
             if (issue.quote() == null || issue.quote().isBlank()) {
-                // No quote: penalize confidence but don't discard
-                anchored.add(issue.withConfidence(issue.confidenceScore() * 0.5));
+                // No quote: discard — cannot verify evidence
+                log.debug("EvidenceAnchoring: SCARTATA [{}] — quote assente o vuota", issue.id());
+                FuzzyDiscardAccumulator acc = FuzzyDiscardAccumulator.current();
+                if (acc != null) {
+                    acc.addDiscarded(issue.id(), 0.0, "(no quote)", null, "quote_missing_or_empty");
+                }
+                rejected++;
                 continue;
             }
 
             String normalizedQuote = normalize(issue.quote());
             if (normalizedQuote.length() < 15) {
-                // Quote too short for reliable match: accept with penalty
-                anchored.add(issue.withConfidence(issue.confidenceScore() * 0.7));
+                // Quote too short for reliable match: light penalty so they can still pass threshold 0.75
+                // (e.g. 0.8 * 0.95 = 0.76)
+                anchored.add(issue.withConfidence(issue.confidenceScore() * 0.95));
                 continue;
             }
 
@@ -66,6 +80,17 @@ public class EvidenceAnchoringService {
             if (similarity < MIN_SIMILARITY) {
                 log.debug("EvidenceAnchoring: SCARTATA [{}] — quote non trovata (similarity={:.2f}): \"{}\"",
                         issue.id(), similarity, truncate(issue.quote(), 80));
+                FuzzyDiscardAccumulator acc = FuzzyDiscardAccumulator.current();
+                if (acc != null) {
+                    String fullQuote = exportFullDiscardedQuote ? issue.quote() : null;
+                    acc.addDiscarded(
+                            issue.id(),
+                            similarity,
+                            truncate(issue.quote(), 140),
+                            fullQuote,
+                            "quote_not_found_by_fuzzy_match"
+                    );
+                }
                 rejected++;
             } else {
                     // Adjust confidence based on match
@@ -85,7 +110,7 @@ public class EvidenceAnchoringService {
             }
         }
 
-        log.info("EvidenceAnchoring: {}/{} issues confirmed, {} discarded for quote not found",
+        log.info("EvidenceAnchoring: {}/{} issues confirmed, {} discarded (missing quote or not found)",
                 anchored.size(), issues.size(), rejected);
 
         return anchored;

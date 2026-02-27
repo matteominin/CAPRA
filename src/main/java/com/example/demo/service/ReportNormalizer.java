@@ -17,7 +17,7 @@ import java.util.stream.Collectors;
  * <ul>
  *   <li>Sort issues by confidence score and limit to a maximum count</li>
  *   <li>Ensure every issue has a shortDescription</li>
- *   <li>Cross-check: flag issues without verbatim quotes as generation errors</li>
+ *   <li>Cross-check: log defensively if an issue has no quote (Evidence Anchoring already discards them)</li>
  *   <li>Cross-check: warn if document mentions "security"/"transaction" keywords but
  *       no HIGH-severity issue was generated</li>
  *   <li>Filter feature coverage to only include missing/partial features</li>
@@ -188,9 +188,7 @@ public class ReportNormalizer {
 
     private AuditIssue validateQuote(AuditIssue issue) {
         if (issue.quote() == null || issue.quote().isBlank()) {
-            log.warn("ReportNormalizer: issue {} has no quote — generation error", issue.id());
-            // Penalize confidence for quoteless issues
-            return issue.withConfidence(issue.confidenceScore() * 0.6);
+            log.warn("ReportNormalizer: issue {} has no quote (unexpected; Evidence Anchoring should have discarded it)", issue.id());
         }
         return issue;
     }

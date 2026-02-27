@@ -1,0 +1,14 @@
+======================================================
+  Token & timing usage — 25-04-04_FediDelaurentiis
+  Run date : Wed Feb 25 14:19:08 CET 2026
+======================================================
+
+--- Elaborato SWE.pdf ---
+openai_input_tokens: 120860
+openai_output_tokens: 18398
+openai_total_tokens: 139258
+anthropic_input_tokens: 33175
+anthropic_output_tokens: 2356
+anthropic_total_tokens: 35531
+execution_time_seconds: 195.853918
+

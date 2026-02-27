@@ -1,0 +1,14 @@
+======================================================
+  Token & timing usage — 25-05-30_BerishaChirliDonadoniGopalakrishnan_30LBiblioteca
+  Run date : Wed Feb 25 14:37:35 CET 2026
+======================================================
+
+--- Relazione_Ingegneria_Software-1.pdf ---
+openai_input_tokens: 182383
+openai_output_tokens: 20340
+openai_total_tokens: 202723
+anthropic_input_tokens: 46958
+anthropic_output_tokens: 2766
+anthropic_total_tokens: 49724
+execution_time_seconds: 304.708676
+

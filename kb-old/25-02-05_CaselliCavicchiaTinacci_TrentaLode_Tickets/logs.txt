@@ -1,0 +1,31 @@
+======================================================
+  Analysis log — 25-02-05_CaselliCavicchiaTinacci_TrentaLode_Tickets
+  Run date : Wed Feb 25 14:13:25 CET 2026
+======================================================
+
+------------------------------------------------------
+File             : Domain Driven Design of a Digital Ticketing Validation System to Prevent Scalping.pdf
+Timestamp        : Wed Feb 25 14:16:45 CET 2026
+HTTP status      : 200
+Content-Type     : application/pdf
+Execution time   : 199.861278s
+OpenAI tokens    : in=131515  out=17229  tot=148744
+Anthropic tokens : in=35387  out=2448  tot=37835
+
+Response headers:
+HTTP/1.1 100 
+
+HTTP/1.1 200 
+Content-Disposition: attachment; filename="audit-report.pdf"
+X-OpenAI-Input-Tokens: 131515
+X-OpenAI-Output-Tokens: 17229
+X-OpenAI-Total-Tokens: 148744
+X-Anthropic-Input-Tokens: 35387
+X-Anthropic-Output-Tokens: 2448
+X-Anthropic-Total-Tokens: 37835
+Accept-Ranges: bytes
+Content-Type: application/pdf
+Content-Length: 321909
+Date: Wed, 25 Feb 2026 13:16:45 GMT
+
+

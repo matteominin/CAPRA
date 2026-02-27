@@ -11,7 +11,7 @@ package com.example.demo.model;
  * @param quote            Verbatim quote from the original document
  * @param category         Issue category (Requirements, Architecture, Testing)
  * @param recommendation   Suggested corrective action for the student
- * @param confidenceScore  Agent confidence level (0.0-1.0). Defaults to 0.8 if not specified by the LLM.
+ * @param confidenceScore  Agent confidence level (0.0-1.0). Defaults to 0.7 if not specified by the LLM.
  */
 public record AuditIssue(
         String id,
@@ -24,9 +24,9 @@ public record AuditIssue(
         String recommendation,
         double confidenceScore
 ) {
-    /** Compact constructor: defaults confidence to 0.8 and generates shortDescription if missing. */
+    /** Compact constructor: defaults confidence to 0.7 and generates shortDescription if missing. */
     public AuditIssue {
-        if (confidenceScore <= 0.0) confidenceScore = 0.8;
+        if (confidenceScore <= 0.0) confidenceScore = 0.7;
         if (shortDescription == null || shortDescription.isBlank()) {
             shortDescription = description != null && description.length() > 120
                     ? description.substring(0, 117) + "..."

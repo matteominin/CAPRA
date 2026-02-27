@@ -1,0 +1,24 @@
+------------------------------------------------------
+File             : [swe]Relazione Pinzani-Davio.pdf
+Timestamp        : Wed Feb 25 14:19:08 CET 2026
+HTTP status      : 200
+Content-Type     : application/pdf
+Execution time   : 142.751949s
+OpenAI tokens    : in=36204  out=17560  tot=53764
+Anthropic tokens : in=10705  out=2223  tot=12928
+
+Response headers:
+HTTP/1.1 200 
+Content-Disposition: attachment; filename="audit-report.pdf"
+X-OpenAI-Input-Tokens: 36204
+X-OpenAI-Output-Tokens: 17560
+X-OpenAI-Total-Tokens: 53764
+X-Anthropic-Input-Tokens: 10705
+X-Anthropic-Output-Tokens: 2223
+X-Anthropic-Total-Tokens: 12928
+Accept-Ranges: bytes
+Content-Type: application/pdf
+Content-Length: 291193
+Date: Wed, 25 Feb 2026 13:19:08 GMT
+
+

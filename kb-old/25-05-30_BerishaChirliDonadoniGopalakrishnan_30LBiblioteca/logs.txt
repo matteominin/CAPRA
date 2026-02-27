@@ -1,0 +1,31 @@
+======================================================
+  Analysis log — 25-05-30_BerishaChirliDonadoniGopalakrishnan_30LBiblioteca
+  Run date : Wed Feb 25 14:37:35 CET 2026
+======================================================
+
+------------------------------------------------------
+File             : Relazione_Ingegneria_Software-1.pdf
+Timestamp        : Wed Feb 25 14:42:40 CET 2026
+HTTP status      : 200
+Content-Type     : application/pdf
+Execution time   : 304.708676s
+OpenAI tokens    : in=182383  out=20340  tot=202723
+Anthropic tokens : in=46958  out=2766  tot=49724
+
+Response headers:
+HTTP/1.1 100 
+
+HTTP/1.1 200 
+Content-Disposition: attachment; filename="audit-report.pdf"
+X-OpenAI-Input-Tokens: 182383
+X-OpenAI-Output-Tokens: 20340
+X-OpenAI-Total-Tokens: 202723
+X-Anthropic-Input-Tokens: 46958
+X-Anthropic-Output-Tokens: 2766
+X-Anthropic-Total-Tokens: 49724
+Accept-Ranges: bytes
+Content-Type: application/pdf
+Content-Length: 342967
+Date: Wed, 25 Feb 2026 13:42:40 GMT
+
+
