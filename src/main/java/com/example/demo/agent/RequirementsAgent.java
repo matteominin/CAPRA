@@ -114,6 +114,8 @@ public class RequirementsAgent {
                         Analyze the following Software Engineering document.
                         Identify all problems related to requirements, use cases, and business logic.
                         For each problem, provide an exact verbatim quote from the document.
+                        WRITE ALL OUTPUT IN ENGLISH. DO NOT translate document-specific identifiers, use case names,
+                        class names, or any term exactly as it appears in the document.
                             
                         DOCUMENT:
                         ---
