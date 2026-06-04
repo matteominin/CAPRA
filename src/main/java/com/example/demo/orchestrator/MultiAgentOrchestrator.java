@@ -22,7 +22,7 @@ import java.util.stream.Stream;
  * Multi-agent pipeline orchestrator.
  * Pipeline:
  * 1. Text extraction (Flask)
- * 2. Parallel analysis: Requirements + TestAuditor + Features + Traceability + Glossary
+ * 2. Parallel analysis: Requirements + TestAuditor + Features + Traceability
  * 3. Evidence Anchoring (fuzzy match, NO LLM)
  * 4. Confidence filtering (discard confidence < threshold)
  * 5. LLM cross-verification (ConsistencyManager)
@@ -49,7 +49,6 @@ public class MultiAgentOrchestrator {
     private final TestAuditorAgent testAuditorAgent;
     private final FeatureCheckAgent featureCheckAgent;
     private final TraceabilityMatrixAgent traceabilityAgent;
-    private final GlossaryConsistencyAgent glossaryAgent;
     private final EvidenceAnchoringService evidenceAnchoring;
     private final ConsistencyManager consistencyManager;
     private final LatexReportService latexReportService;
@@ -61,7 +60,6 @@ public class MultiAgentOrchestrator {
                                   TestAuditorAgent testAuditorAgent,
                                   FeatureCheckAgent featureCheckAgent,
                                   TraceabilityMatrixAgent traceabilityAgent,
-                                  GlossaryConsistencyAgent glossaryAgent,
                                   EvidenceAnchoringService evidenceAnchoring,
                                   ConsistencyManager consistencyManager,
                                   LatexReportService latexReportService,
@@ -72,7 +70,6 @@ public class MultiAgentOrchestrator {
         this.testAuditorAgent = testAuditorAgent;
         this.featureCheckAgent = featureCheckAgent;
         this.traceabilityAgent = traceabilityAgent;
-        this.glossaryAgent = glossaryAgent;
         this.evidenceAnchoring = evidenceAnchoring;
         this.consistencyManager = consistencyManager;
         this.latexReportService = latexReportService;
@@ -92,7 +89,7 @@ public class MultiAgentOrchestrator {
         log.info("[1/7] Extraction completed: {} characters", fullText.length());
 
         // ── Step 2: Parallel analysis with ALL agents ──
-        log.info("[2/7] Starting parallel analysis (5 agents)...");
+        log.info("[2/7] Starting parallel analysis (4 agents)...");
 
         CompletableFuture<AgentResponse> reqFuture =
                 CompletableFuture.supplyAsync(() -> requirementsAgent.analyze(fullText), agentExecutor);
@@ -102,19 +99,16 @@ public class MultiAgentOrchestrator {
                 CompletableFuture.supplyAsync(() -> featureCheckAgent.checkFeatures(fullText), agentExecutor);
         CompletableFuture<List<TraceabilityEntry>> traceFuture =
                 CompletableFuture.supplyAsync(() -> traceabilityAgent.buildMatrix(fullText), agentExecutor);
-        CompletableFuture<List<GlossaryIssue>> glossaryFuture =
-                CompletableFuture.supplyAsync(() -> glossaryAgent.analyze(fullText), agentExecutor);
 
         AgentResponse reqResponse = reqFuture.join();
         AgentResponse testResponse = testFuture.join();
         List<FeatureCoverage> featureCoverage = featureFuture.join();
         List<TraceabilityEntry> traceability = traceFuture.join();
-        List<GlossaryIssue> glossaryIssues = glossaryFuture.join();
 
         log.info("[2/7] Analysis completed — REQ: {} issues, TST: {} issues, Features: {}, " +
-                        "Traceability: {} entries, Glossary: {} issues",
+                        "Traceability: {} entries",
                 reqResponse.issues().size(), testResponse.issues().size(),
-                featureCoverage.size(), traceability.size(), glossaryIssues.size());
+                featureCoverage.size(), traceability.size());
 
         // ── Step 3: Evidence Anchoring (fuzzy match, NO LLM) ──
         log.info("[3/7] Evidence Anchoring (quote verification via fuzzy match)...");
@@ -145,7 +139,7 @@ public class MultiAgentOrchestrator {
         // ── Step 6: Report generation ──
         log.info("[6/7] Generating LaTeX report...");
         AuditReport report = AuditReport.from(filename, verifiedIssues,
-                featureCoverage, traceability, glossaryIssues);
+                featureCoverage, traceability);
         Path texFile = latexReportService.generateReport(report, fullText);
         log.info("[6/7] LaTeX report generated: {}", texFile);
 
@@ -160,8 +154,8 @@ public class MultiAgentOrchestrator {
         }
 
         log.info("═══════════════════════════════════════════════");
-        log.info("Pipeline completed: {} issues, {} features, {} traceability, {} glossary",
-                report.totalIssues(), featureCoverage.size(), traceability.size(), glossaryIssues.size());
+        log.info("Pipeline completed: {} issues, {} features, {} traceability",
+                report.totalIssues(), featureCoverage.size(), traceability.size());
         log.info("═══════════════════════════════════════════════");
 
         return new AuditResult(report, texFile, pdfFile);

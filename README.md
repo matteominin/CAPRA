@@ -8,7 +8,7 @@ Built with **Java 25**, **Spring Boot 4.0.3**, **Spring AI 2.0.0-M2**, **OpenAI 
 
 ## Architecture Overview
 
-The system implements a **7-step pipeline** orchestrated by `MultiAgentOrchestrator`. Five specialized agents analyze the document in parallel, followed by evidence verification, confidence filtering, cross-verification, LaTeX report generation, and PDF compilation.
+The system implements a **7-step pipeline** orchestrated by `MultiAgentOrchestrator`. Four specialized agents analyze the document in parallel, followed by evidence verification, confidence filtering, cross-verification, LaTeX report generation, and PDF compilation.
 
 ```
                          ┌─────────────────────┐
@@ -30,11 +30,6 @@ The system implements a **7-step pipeline** orchestrated by `MultiAgentOrchestra
               │  │                  │                   │  │
               │  │  ┌───────────────▼──────────────┐   │  │
               │  │  │ TraceabilityMatrixAgent       │   │  │
-              │  │  │   (GPT-5.1)                  │   │  │
-              │  │  └───────────────┬──────────────┘   │  │
-              │  │                  │                   │  │
-              │  │  ┌───────────────▼──────────────┐   │  │
-              │  │  │ GlossaryConsistencyAgent      │   │  │
               │  │  │   (GPT-5.1)                  │   │  │
               │  │  └───────────────┬──────────────┘   │  │
               │  │                  │                   │  │
@@ -74,7 +69,7 @@ The uploaded PDF is sent to an external **Flask microservice** (running on port 
 
 ### Step 2 — Parallel Agent Analysis
 
-Five agents run **concurrently** using Java virtual threads (`Executors.newVirtualThreadPerTaskExecutor()`). Each agent receives the full document text and uses **GPT-5.1** (temperature=0.0, seed=42) for deterministic analysis.
+Four agents run **concurrently** using Java virtual threads (`Executors.newVirtualThreadPerTaskExecutor()`). Each agent receives the full document text and uses **GPT-5.1** (temperature=0.0, seed=42) for deterministic analysis.
 
 #### 2a. RequirementsAgent
 
@@ -134,18 +129,6 @@ Five agents run **concurrently** using Java virtual threads (`Executors.newVirtu
 
 This is one of the most valuable checks — students rarely produce a complete traceability matrix.
 
-#### 2e. GlossaryConsistencyAgent
-
-**Purpose**: Detects **terminological inconsistencies** in the document.
-
-**What it checks**:
-- Involuntary synonyms (same entity called by different names)
-- Undefined technical terms
-- Inconsistent acronyms
-- Mixed Italian/English usage for the same concept
-
-**Output**: List of `GlossaryIssue` records with `termGroup`, `variants`, `severity` (MAJOR/MINOR), and `suggestion`.
-
 ---
 
 ### Step 3 — Evidence Anchoring (`EvidenceAnchoringService`)
@@ -200,7 +183,6 @@ Uses **Anthropic Haiku 4.5** (temperature=0.0, max-tokens=8192) with fallback to
 | 6 | Issue Detail | Programmatic per-category, per-UC grouping with confidence badges and cross-references |
 | 7 | Priority Recommendations | Programmatic — HIGH-severity issues only, one line each |
 | 8 | Traceability Matrix | Programmatic table with ✓/✗ indicators and gap descriptions |
-| 9 | Terminological Consistency | Programmatic table of glossary issues with severity and suggestions |
 
 **LLM output sanitization** (`sanitizeLlmLatex`): Strips dangerous commands (`\documentclass`, `\usepackage`, `\begin{document}`, `\input`, `\include`, markdown code fences) from LLM-generated LaTeX to prevent template breakage.
 

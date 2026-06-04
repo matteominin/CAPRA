@@ -402,12 +402,6 @@ public class LatexReportService {
             sb.append(buildTraceabilityMatrix(report.traceabilityMatrix()));
         }
 
-        // ── 10. Glossary Issues ──
-        if (report.glossaryIssues() != null && !report.glossaryIssues().isEmpty()) {
-            sb.append("\\section{Terminological Consistency}\n");
-            sb.append(buildGlossaryIssuesSection(report.glossaryIssues()));
-        }
-
         sb.append("\\end{document}\n");
         return sb.toString();
     }
@@ -768,7 +762,7 @@ public class LatexReportService {
     }
 
     // ═══════════════════════════════════════════════════
-    // New section builders (Traceability, Glossary, Layout)
+    // New section builders (Traceability, Layout)
     // ═══════════════════════════════════════════════════
 
     /**
@@ -910,41 +904,6 @@ public class LatexReportService {
                     designMark,
                     testMark,
                     gapText));
-        }
-
-        sb.append("\\bottomrule\n");
-        sb.append("\\end{longtable}\n\n");
-
-        return sb.toString();
-    }
-
-    /**
-     * Terminological consistency section — glossary errors / inconsistent terminology.
-     */
-    private String buildGlossaryIssuesSection(List<GlossaryIssue> issues) {
-        var sb = new StringBuilder();
-
-        long major = issues.stream().filter(g -> "MAJOR".equalsIgnoreCase(g.severity())).count();
-        long minor = issues.size() - major;
-        sb.append("Found \\textbf{%d} terminological inconsistencies (%d major, %d minor).\n\n"
-                .formatted(issues.size(), major, minor));
-
-        sb.append("\\begin{longtable}{>{\\RaggedRight\\arraybackslash\\hspace{0pt}}p{3cm} >{\\RaggedRight\\arraybackslash\\hspace{0pt}}p{4cm} c >{\\RaggedRight\\arraybackslash\\hspace{0pt}}p{5cm}}\n");
-        sb.append("\\toprule\n");
-        sb.append("\\textbf{Group} & \\textbf{Variants found} & \\textbf{Severity} & \\textbf{Suggestion} \\\\\n");
-        sb.append("\\midrule\n");
-        sb.append("\\endhead\n");
-
-        for (GlossaryIssue g : issues) {
-            String sevColor = "MAJOR".equalsIgnoreCase(g.severity()) ? "highcolor" : "medcolor";
-            String variants = g.variants() != null ? escapeLatex(g.variants()) : "";
-
-            sb.append("%s & {\\small %s} & \\textcolor{%s}{%s} & {\\small %s} \\\\\n".formatted(
-                    escapeLatex(g.termGroup()),
-                    variants,
-                    sevColor,
-                    escapeLatex(g.severity()),
-                    escapeLatex(g.suggestion() != null ? g.suggestion() : "")));
         }
 
         sb.append("\\bottomrule\n");
