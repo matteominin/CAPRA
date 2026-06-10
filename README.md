@@ -1,4 +1,4 @@
-# SWE-Audit-Agent
+# CAPRA
 
 A multi-agent LLM system that automatically audits Software Engineering PDF documents (theses, project reports) and produces a detailed LaTeX/PDF audit report.
 
